@@ -292,68 +292,86 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 ### Phase 3 — Telegram Bot
 
 - [ ] Install `telegraf` (Telegram bot framework for Node.js/TypeScript)
+- [ ] Create `src/services/session.service.ts` — get/set/clear conversation state in DynamoDB (TTL 30 min)
 - [ ] Implement conversation flow in `src/clients/telegram/handlers.ts`
-    - Step 0: onboarding if no profile exists
+    - Step 0: onboarding if no profile exists (`/start` command)
     - Step 1: ask for date
     - Step 2: show available slots (or offer watchlist if date > 2 weeks out)
     - Step 3: confirm booking
-- [ ] Add `TELEGRAM_BOT_TOKEN` to `.env` / Secrets Manager
+    - `/profile` — view/update stored profile
+    - `/delete` — GDPR purge of all user data
+- [ ] Add `TELEGRAM_BOT_TOKEN` to `.env`
 - [ ] Write `src/lambda/telegram.handler.ts` Lambda entry point
-- [ ] Test locally with `telegraf` polling mode
+- [ ] Test end-to-end locally with `telegraf` polling mode (long-polling, no webhook needed)
 
-### Phase 4 — WhatsApp Bot
+### Phase 4 — MVP Deployment 🚀
 
-- [ ] Choose provider: **Meta Cloud API** (free, official) or **Twilio** (easier dbSetup)
-- [ ] Implement same conversation flow in `src/clients/whatsapp/handlers.ts`
+> **Milestone:** fully working booking flow for both CLI and Telegram, running in production on AWS.
+
+- [ ] Install AWS CDK: `pnpm add -D aws-cdk-lib constructs`
+- [ ] Write `infrastructure/stacks/booking-bot-stack.ts` (MVP scope):
+    - `NodejsFunction` — Telegram handler Lambda
+    - `HttpApi` (API Gateway) — single POST `/telegram` route
+    - `Table` — DynamoDB single-table (sessions + profiles + watchlist)
+    - `Secret` — OWA cookie, canary token, and `TELEGRAM_BOT_TOKEN` in Secrets Manager
+- [ ] Add `DYNAMODB_TABLE_NAME` and AWS credentials to production environment / GitHub secrets
+- [ ] `cdk deploy`
+- [ ] Register Telegram webhook: `setWebhook` → API Gateway URL
+- [ ] Smoke-test the full booking flow end-to-end via Telegram in production
+
+---
+
+> ✅ **MVP complete.** CLI and Telegram booking are live. Everything below extends the platform.
+
+---
+
+### Phase 5 — WhatsApp Bot
+
+- [ ] Choose provider: **Meta Cloud API** (free, official) or **Twilio** (easier setup)
+- [ ] Implement same conversation flow in `src/clients/whatsapp/handlers.ts` (reuse session + user services)
 - [ ] Write `src/lambda/whatsapp.handler.ts` Lambda entry point
-- [ ] Register webhook URL with Meta / Twilio
+- [ ] Add `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` to Secrets Manager
+- [ ] Register webhook URL with Meta Developer Console / Twilio
 
-### Phase 5 — Advance Booking Watchlist (bots)
+### Phase 6 — Advance Booking Watchlist (bots)
 
-- [ ] Create `src/services/watchlist.service.ts` with `addToWatchlist`, `getWatchlist`, `removeFromWatchlist`
+- [ ] Extend `src/services/watchlist.service.ts` with `addToWatchlist`, `getWatchlist`, `removeFromWatchlist`
 - [ ] Write `src/lambda/watchlist.handler.ts` — hourly EventBridge-triggered poller
     - Query all `pending` watchlist entries where `wantedDate <= today + 14 days`
     - Attempt `getAvailableSlots` → if slot free, call `createAppointment`
-    - Notify user of success or unavailability
+    - Notify user of success or unavailability via Telegram / WhatsApp
 - [ ] Add "notify only" option — user can opt out of auto-booking and just get alerted
-- [ ] Wire watchlist offer into bot handlers when user picks a date > 2 weeks out
+- [ ] Wire watchlist offer into both bot handlers when user picks a date > 2 weeks out
 
-### Phase 6 — Session State
+### Phase 7 — Full Production Deployment (WhatsApp + Watchlist)
 
-- [ ] Install `@aws-sdk/client-dynamodb` + `@aws-sdk/lib-dynamodb`
-- [ ] Create `src/services/session.service.ts` to get/set/clear conversation state
-- [ ] Wire session service into both bot handlers
-
-### Phase 7 — AWS Deployment
-
-- [ ] Install AWS CDK: `pnpm add -D aws-cdk-lib constructs`
-- [ ] Write `infrastructure/stacks/booking-bot-stack.ts`
-    - Lambda functions (Telegram + WhatsApp handlers + WatchlistPoller)
-    - API Gateway HTTP API
-    - DynamoDB table (single-table)
-    - EventBridge hourly schedule for watchlist
-    - Secrets Manager references
+- [ ] Extend `infrastructure/stacks/booking-bot-stack.ts`:
+    - `NodejsFunction` — WhatsApp handler Lambda + POST `/whatsapp` route
+    - `NodejsFunction` — WatchlistPoller Lambda
+    - `Schedule` (EventBridge) — hourly trigger for WatchlistPoller
 - [ ] `cdk deploy`
-- [ ] Register Telegram webhook: `setWebhook` → API Gateway URL
 - [ ] Register WhatsApp webhook in Meta Developer Console
 
 ### Phase 8 — Hardening
 
-- [ ] Move OWA cookie + canary token to Secrets Manager (rotate when expired)
-- [ ] Add CloudWatch alarms for Lambda errors
-- [ ] Add input validation for date and slot selection
+- [ ] Rotate OWA cookie + canary token via Secrets Manager (automate rotation reminders)
+- [ ] Add CloudWatch alarms for Lambda errors and DynamoDB throttles
+- [ ] Add input validation for date and slot selection across all clients
 - [ ] Handle edge cases: no slots available, booking conflict, API timeout, watchlist slot missed
+- [ ] Add GDPR `/delete` command confirmation + audit log
 
 ---
 
 ## 10. Key Dependencies to Add
 
-| Package                           | Purpose                                         |
-|-----------------------------------|-------------------------------------------------|
-| `telegraf`                        | Telegram bot framework                          |
-| `@aws-sdk/client-dynamodb`        | DynamoDB for sessions, user profiles, watchlist |
-| `@aws-sdk/lib-dynamodb`           | DynamoDB document client (easier API)           |
-| `@aws-sdk/client-secrets-manager` | Read secrets at runtime                         |
-| `aws-cdk-lib`                     | Infrastructure as Code                          |
-| `aws-lambda`                      | Lambda handler types                            |
-| `@types/aws-lambda`               | TypeScript types for Lambda                     |
+| Package                           | Phase     | Purpose                                                   |
+|-----------------------------------|-----------|-----------------------------------------------------------|
+| `telegraf`                        | 3 (MVP)   | Telegram bot framework                                    |
+| `@aws-sdk/client-dynamodb`        | 3 (MVP)   | DynamoDB for sessions, user profiles, watchlist           |
+| `@aws-sdk/lib-dynamodb`           | 3 (MVP)   | DynamoDB document client (easier API)                     |
+| `aws-cdk-lib`                     | 4 (MVP)   | Infrastructure as Code — CDK stack                        |
+| `constructs`                      | 4 (MVP)   | CDK constructs peer dependency                            |
+| `@aws-sdk/client-secrets-manager` | 4 (MVP)   | Read OWA cookie, canary token, and bot tokens at runtime  |
+| `aws-lambda`                      | 4 (MVP)   | Lambda handler types                                      |
+| `@types/aws-lambda`               | 4 (MVP)   | TypeScript types for Lambda                               |
+| `whatsapp-cloud-api` / `twilio`   | 5         | WhatsApp messaging provider                               |
