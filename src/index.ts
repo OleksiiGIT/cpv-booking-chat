@@ -114,7 +114,7 @@ export async function main() {
         console.log(`\n✅ Booking confirmed!`);
         console.log(`   ID:    ${appointment.id}`);
         console.log(`   Time:  ${bookedStart} – ${bookedEnd}`);
-        console.log(`   Court: ${appointment.serviceName} ${staffIdIndex}`);
+        console.log(`   ${appointment.serviceName}: ${staffIdIndex}`);
         process.exit(0);
     } catch (error) {
         if (isAxiosError(error)) {
