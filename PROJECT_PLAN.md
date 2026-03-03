@@ -104,10 +104,10 @@ cpv-booking-chat/
 │   │   │   ├── prompts.ts           # all prompt-sync interactions (date, slot, profile)
 │   │   │   └── profile.ts           # read/write ~/.cpv-booking/profile.json
 │   │   ├── telegram/
-│   │   │   ├── bot.ts               # Telegram bot setup (telegraf)
+│   │   │   ├── bot.ts               # Telegram bot dbSetup (telegraf)
 │   │   │   └── handlers.ts          # conversation flow using BookingService
 │   │   └── whatsapp/
-│   │       ├── bot.ts               # WhatsApp webhook setup (whatsapp-cloud-api / twilio)
+│   │       ├── bot.ts               # WhatsApp webhook dbSetup (whatsapp-cloud-api / twilio)
 │   │       └── handlers.ts          # conversation flow using BookingService
 │   ├── lambda/
 │   │   ├── telegram.handler.ts      # Lambda entry point for Telegram webhook
@@ -279,13 +279,15 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [x] Update `package.json` `dev` script to point to `src/clients/cli/index.ts`
 - [x] CLI watchlist: store wanted slots in `~/.cpv-booking/watchlist.json` and check them on each run
 
-### Phase 2 — User Profile Storage (DynamoDB, shared by bot clients)
+### Phase 2 — User Profile Storage (DynamoDB, shared by bot clients) ✅
 
-- [ ] Design DynamoDB table schema (single-table design — sessions + profiles + watchlist)
-- [ ] Create `src/services/user.service.ts` with `getProfile`, `saveProfile`, `deleteProfile`
-- [ ] Build onboarding conversation flow (collect name, email, phone, membership number)
-- [ ] Add GDPR consent step and `/delete` command
-- [ ] Replace hardcoded `customerData` from `test.data.ts` with `userService.getProfile(userId)`
+- [x] Design DynamoDB table schema (single-table design — sessions + profiles + watchlist)
+- [x] Create `src/db/dynamo.ts` — DynamoDB DocumentClient singleton (uses `DYNAMODB_ENDPOINT` for local)
+- [x] Create `src/db/dbSetup.ts` — one-time table creation script (`pnpm dbSetup:db`)
+- [x] Create `src/services/user.service.ts` with `getProfile`, `saveProfile`, `deleteProfile`
+- [x] Update `src/services/watchlist.service.ts` — replaced file I/O with DynamoDB
+- [x] Update `src/services/profile.service.ts` — storage removed, keeps only `profileToCustomer`
+- [x] Replace hardcoded `customerData` from `test.data.ts` with `user.service.getProfile(userId)`
 
 ### Phase 3 — Telegram Bot
 
@@ -301,7 +303,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ### Phase 4 — WhatsApp Bot
 
-- [ ] Choose provider: **Meta Cloud API** (free, official) or **Twilio** (easier setup)
+- [ ] Choose provider: **Meta Cloud API** (free, official) or **Twilio** (easier dbSetup)
 - [ ] Implement same conversation flow in `src/clients/whatsapp/handlers.ts`
 - [ ] Write `src/lambda/whatsapp.handler.ts` Lambda entry point
 - [ ] Register webhook URL with Meta / Twilio

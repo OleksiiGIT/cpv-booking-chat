@@ -1,30 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { AppointmentCustomer, UserProfile } from '../types';
-import { BOOKINGS_CONFIG } from '../config/bookings.config';
-
-const BASE_DIR = path.join(os.homedir(), '.cpv-booking', 'profiles');
-
-function profilePath(userId: string): string {
-    return path.join(BASE_DIR, `${userId}.json`);
-}
-
-export function loadProfile(userId: string): UserProfile | null {
-    const filePath = profilePath(userId);
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as UserProfile;
-}
-
-export function saveProfile(userId: string, profile: UserProfile): void {
-    fs.mkdirSync(BASE_DIR, { recursive: true });
-    fs.writeFileSync(profilePath(userId), JSON.stringify(profile, null, 2), 'utf-8');
-}
-
-export function deleteProfile(userId: string): void {
-    const filePath = profilePath(userId);
-    if (fs.existsSync(filePath)) fs.rmSync(filePath);
-}
+import {AppointmentCustomer, UserProfile} from '../types';
+import {BOOKINGS_CONFIG} from '../config/bookings.config';
 
 /**
  * Converts a stored UserProfile into an AppointmentCustomer

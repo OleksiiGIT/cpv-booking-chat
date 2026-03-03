@@ -1,49 +1,62 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import {DateTime} from 'luxon';
-import {AppointmentCustomer, WatchlistEntry} from '../types';
-import {BOOKINGS_CONFIG} from '../config/bookings.config';
-import {createAppointment, getAvailableSlots} from './booking.service';
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DateTime } from 'luxon';
+import { AppointmentCustomer, WatchlistEntry } from '../types';
+import { BOOKINGS_CONFIG } from '../config/bookings.config';
+import { createAppointment, getAvailableSlots } from './booking.service';
+import { docClient, TABLE_NAME } from '../db/dynamo';
 
-const BASE_DIR = path.join(os.homedir(), '.cpv-booking', 'watchlists');
+const pk = (userId: string) => `watchlist#${userId}`;
+const sk = (wantedDate: string, wantedTime: string) => `${wantedDate}#${wantedTime}`;
 
-function watchlistPath(userId: string): string {
-    return path.join(BASE_DIR, `${userId}.json`);
+export async function getWatchlist(userId: string): Promise<WatchlistEntry[]> {
+    const { Items } = await docClient.send(
+        new QueryCommand({
+            TableName: TABLE_NAME,
+            KeyConditionExpression: 'pk = :pk',
+            ExpressionAttributeValues: { ':pk': pk(userId) },
+        }),
+    );
+    return (Items ?? []) as WatchlistEntry[];
 }
 
-export function loadWatchlist(userId: string): WatchlistEntry[] {
-    const filePath = watchlistPath(userId);
-    if (!fs.existsSync(filePath)) return [];
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as WatchlistEntry[];
-}
-
-export function saveWatchlist(userId: string, entries: WatchlistEntry[]): void {
-    fs.mkdirSync(BASE_DIR, {recursive: true});
-    fs.writeFileSync(watchlistPath(userId), JSON.stringify(entries, null, 2), 'utf-8');
-}
-
-export function addToWatchlist(userId: string, wantedDate: string, wantedTime: string): void {
-    const entries = loadWatchlist(userId);
-    const alreadyPending = entries.some(
-        (e) => e.wantedDate === wantedDate && e.wantedTime === wantedTime && e.status === 'pending',
+export async function addToWatchlist(userId: string, wantedDate: string, wantedTime: string): Promise<void> {
+    const existing = await docClient.send(
+        new GetCommand({
+            TableName: TABLE_NAME,
+            Key: { pk: pk(userId), sk: sk(wantedDate, wantedTime) },
+        }),
     );
 
-    if (alreadyPending) {
+    if (existing.Item?.status === 'pending') {
         console.log(`⚠️  Already on watchlist: ${wantedDate} at ${wantedTime}`);
         return;
     }
 
-    entries.push({
-        wantedDate,
-        wantedTime,
-        addedAt: DateTime.now().toISO()!,
-        status: 'pending',
-    });
+    await docClient.send(
+        new PutCommand({
+            TableName: TABLE_NAME,
+            Item: {
+                pk: pk(userId),
+                sk: sk(wantedDate, wantedTime),
+                wantedDate,
+                wantedTime,
+                addedAt: DateTime.now().toISO()!,
+                status: 'pending' satisfies WatchlistEntry['status'],
+            },
+        }),
+    );
 
-    saveWatchlist(userId, entries);
     console.log(`\n✅ Added to watchlist: ${wantedDate} at ${wantedTime}`);
     console.log('   Will be auto-booked when it enters the 2-week window.\n');
+}
+
+export async function removeFromWatchlist(userId: string, wantedDate: string, wantedTime: string): Promise<void> {
+    await docClient.send(
+        new DeleteCommand({
+            TableName: TABLE_NAME,
+            Key: { pk: pk(userId), sk: sk(wantedDate, wantedTime) },
+        }),
+    );
 }
 
 /**
@@ -54,14 +67,12 @@ export async function processPendingWatchlist(
     userId: string,
     customer: AppointmentCustomer,
 ): Promise<void> {
-    const entries = loadWatchlist(userId);
-    const pending = entries.filter((e) => e.status === 'pending');
+    const allEntries = await getWatchlist(userId);
+    const pending = allEntries.filter((e) => e.status === 'pending');
 
     if (pending.length === 0) return;
 
     console.log(`\n🔍 Checking ${pending.length} watchlist entry(ies)...\n`);
-
-    let changed = false;
 
     for (const entry of pending) {
         const wantedDate = DateTime.fromFormat(entry.wantedDate, 'yyyy-MM-dd');
@@ -87,25 +98,25 @@ export async function processPendingWatchlist(
                 continue;
             }
 
-            const {appointment, staffIndex} = await createAppointment(match, customer);
-            entry.status = 'booked';
-            changed = true;
+            const { appointment } = await createAppointment(match, customer);
 
-            const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat(
-                'dd MMM yyyy, HH:mm',
+            await docClient.send(
+                new UpdateCommand({
+                    TableName: TABLE_NAME,
+                    Key: { pk: pk(userId), sk: sk(entry.wantedDate, entry.wantedTime) },
+                    UpdateExpression: 'SET #status = :status',
+                    ExpressionAttributeNames: { '#status': 'status' },
+                    ExpressionAttributeValues: { ':status': 'booked' satisfies WatchlistEntry['status'] },
+                }),
             );
+
+            const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat('dd MMM yyyy, HH:mm');
             const bookedEnd = DateTime.fromISO(appointment.endTime.dateTime).toFormat('HH:mm');
             console.log(`  ✅ Auto-booked from watchlist!`);
             console.log(`     ID:   ${appointment.id}`);
             console.log(`     Time: ${bookedStart} – ${bookedEnd}\n`);
-            console.log(`     ${appointment.serviceName}: ${staffIndex}`);
         } catch (err) {
-            console.error(
-                `  ⚠️  Failed to auto-book ${entry.wantedDate} ${entry.wantedTime}:`,
-                err,
-            );
+            console.error(`  ⚠️  Failed to auto-book ${entry.wantedDate} ${entry.wantedTime}:`, err);
         }
     }
-
-    if (changed) saveWatchlist(userId, entries);
 }

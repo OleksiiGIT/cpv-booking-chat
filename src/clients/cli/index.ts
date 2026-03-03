@@ -8,7 +8,8 @@ import {
     promptWatchlistOrExit,
     promptWatchlistTime,
 } from './prompts';
-import {loadProfile, profileToCustomer, saveProfile} from '../../services/profile.service';
+import {profileToCustomer} from '../../services/profile.service';
+import {getProfile, saveProfile} from '../../services/user.service';
 import {addToWatchlist, processPendingWatchlist} from '../../services/watchlist.service';
 import {createAppointment, getAvailableSlots} from '../../services/booking.service';
 
@@ -16,10 +17,10 @@ const USER_ID = 'default';
 
 async function main() {
     // 1. Load or collect user profile
-    let profile = loadProfile(USER_ID);
+    let profile = await getProfile(USER_ID);
     if (!profile) {
         profile = promptOnboarding();
-        saveProfile(USER_ID, profile);
+        await saveProfile(USER_ID, profile);
         console.log('\n✅ Profile saved!\n');
     }
 
@@ -34,7 +35,7 @@ async function main() {
     if (isDateBeyondWindow(date)) {
         const action = promptWatchlistOrExit(date);
         if (action === 'watchlist') {
-            addToWatchlist(USER_ID, date.toFormat('yyyy-MM-dd'), promptWatchlistTime());
+            await addToWatchlist(USER_ID, date.toFormat('yyyy-MM-dd'), promptWatchlistTime());
         }
         process.exit(0);
     }
@@ -54,7 +55,7 @@ async function main() {
     const selectedSlot = promptSlot(slots);
     if (!selectedSlot) process.exit(1);
 
-    // 7. Fetch user profile
+    // 7. Build customer payload
     const customer = profileToCustomer(profile);
 
     // 8. Book
@@ -69,7 +70,7 @@ async function main() {
     console.log('\n✅ Booking confirmed!');
     console.log(`   ID:    ${appointment.id}`);
     console.log(`   Time:  ${bookedStart} – ${bookedEnd}`);
-    console.log(`   ${appointment.serviceName}: ${staffIndex}`);
+    console.log(`   Court: ${appointment.serviceName} (court ${staffIndex})`);
 
     process.exit(0);
 }
