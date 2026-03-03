@@ -46,7 +46,7 @@ type AnsweredCustomQuestion = {
     selectedOptions: Array<string>;
 };
 
-type CustomerLocation = {
+export type CustomerLocation = {
     displayName: string;
     address: {
         street: string;
@@ -54,7 +54,7 @@ type CustomerLocation = {
     };
 };
 
-type AppointmentCustomer = {
+export type AppointmentCustomer = {
     name: string;
     emailAddress: string;
     phone: string;
@@ -195,4 +195,20 @@ export type AppointmentResponse = {
         isAllDay: boolean;
         canOverrideOtpValidation: boolean;
     };
+};
+
+export type UserProfile = {
+    name: string;
+    emailAddress: string;
+    phone: string;
+    membershipNumber: string;
+    timeZone: string;
+    location: CustomerLocation;
+};
+
+export type WatchlistEntry = {
+    wantedDate: string;
+    wantedTime: string;
+    addedAt: string;
+    status: 'pending' | 'booked' | 'missed' | 'cancelled';
 };

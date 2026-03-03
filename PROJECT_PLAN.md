@@ -251,14 +251,14 @@ new Schedule(this, 'WatchlistSchedule', { schedule: Schedule.rate(Duration.hours
 
 ## 9. Next Steps (ordered)
 
-### Phase 1 — Refactor + CLI Client (no new infrastructure)
-- [ ] Extract `BookingService` from `index.ts` into `src/services/booking.service.ts`
-- [ ] Move hardcoded config (serviceId, staffIds, timeZone) to `src/config/bookings.config.ts`
-- [ ] Move current `src/index.ts` to `src/clients/cli/index.ts`
-- [ ] Extract prompt interactions into `src/clients/cli/prompts.ts`
-- [ ] Create `src/clients/cli/profile.ts` — reads/writes `~/.cpv-booking/profile.json` for local user profile storage (onboarding on first run, reused on subsequent runs)
-- [ ] Update `package.json` `dev` script to point to `src/clients/cli/index.ts`
-- [ ] CLI watchlist: store wanted slots in `~/.cpv-booking/watchlist.json` and check them on each run
+### Phase 1 — Refactor + CLI Client ✅
+- [x] Extract `BookingService` from `index.ts` into `src/services/booking.service.ts`
+- [x] Move hardcoded config (serviceId, staffIds, timeZone) to `src/config/bookings.config.ts`
+- [x] Move current `src/index.ts` to `src/clients/cli/index.ts`
+- [x] Extract prompt interactions into `src/clients/cli/prompts.ts`
+- [x] Create `src/clients/cli/profile.ts` — reads/writes `~/.cpv-booking/profile.json` for local user profile storage (onboarding on first run, reused on subsequent runs)
+- [x] Update `package.json` `dev` script to point to `src/clients/cli/index.ts`
+- [x] CLI watchlist: store wanted slots in `~/.cpv-booking/watchlist.json` and check them on each run
 
 ### Phase 2 — User Profile Storage (DynamoDB, shared by bot clients)
 - [ ] Design DynamoDB table schema (single-table design — sessions + profiles + watchlist)
