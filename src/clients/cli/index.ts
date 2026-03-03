@@ -1,23 +1,30 @@
 import 'dotenv/config';
-import { DateTime } from 'luxon';
-import { getOrCreateProfile, profileToCustomer } from './profile';
+import {DateTime} from 'luxon';
 import {
     isDateBeyondWindow,
     promptDate,
+    promptOnboarding,
     promptSlot,
     promptWatchlistOrExit,
     promptWatchlistTime,
 } from './prompts';
-import { addToWatchlist, processPendingWatchlist } from './watchlist';
-import { createAppointment, getAvailableSlots } from '../../services/booking.service';
+import {loadProfile, profileToCustomer, saveProfile} from '../../services/profile.service';
+import {addToWatchlist, processPendingWatchlist} from '../../services/watchlist.service';
+import {createAppointment, getAvailableSlots} from '../../services/booking.service';
+
+const USER_ID = 'default';
 
 async function main() {
     // 1. Load or collect user profile
-    const profile = getOrCreateProfile();
+    let profile = loadProfile(USER_ID);
+    if (!profile) {
+        profile = promptOnboarding();
+        saveProfile(USER_ID, profile);
+        console.log('\n✅ Profile saved!\n');
+    }
 
     // 2. Check watchlist on every run — auto-book any slots now within the 2-week window
-    const watchlistCustomer = profileToCustomer(profile);
-    await processPendingWatchlist(watchlistCustomer);
+    await processPendingWatchlist(USER_ID, profileToCustomer(profile));
 
     // 3. Ask for a date
     const date = promptDate();
@@ -27,8 +34,7 @@ async function main() {
     if (isDateBeyondWindow(date)) {
         const action = promptWatchlistOrExit(date);
         if (action === 'watchlist') {
-            const time = promptWatchlistTime();
-            addToWatchlist(date.toFormat('yyyy-MM-dd'), time);
+            addToWatchlist(USER_ID, date.toFormat('yyyy-MM-dd'), promptWatchlistTime());
         }
         process.exit(0);
     }
@@ -44,16 +50,16 @@ async function main() {
 
     console.log(`Found ${slots.length} available slot(s) for ${date.toFormat('dd MMM yyyy')}:`);
 
-    // 6. Let user pick a slot
+    // 6. Pick a slot
     const selectedSlot = promptSlot(slots);
     if (!selectedSlot) process.exit(1);
 
     // 7. Fetch user profile
     const customer = profileToCustomer(profile);
 
-    // 8. Book the appointment
+    // 8. Book
     console.log('\nBooking appointment...');
-    const { appointment, staffIndex } = await createAppointment(selectedSlot, customer);
+    const {appointment, staffIndex} = await createAppointment(selectedSlot, customer);
 
     const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat(
         'dd MMM yyyy, HH:mm',

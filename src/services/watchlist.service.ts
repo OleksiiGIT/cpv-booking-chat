@@ -1,26 +1,30 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { DateTime } from 'luxon';
-import { AppointmentCustomer, WatchlistEntry } from '../../types';
-import { BOOKINGS_CONFIG } from '../../config/bookings.config';
-import { getAvailableSlots, createAppointment } from '../../services/booking.service';
+import {DateTime} from 'luxon';
+import {AppointmentCustomer, WatchlistEntry} from '../types';
+import {BOOKINGS_CONFIG} from '../config/bookings.config';
+import {createAppointment, getAvailableSlots} from './booking.service';
 
-const WATCHLIST_DIR = path.join(os.homedir(), '.cpv-booking');
-const WATCHLIST_PATH = path.join(WATCHLIST_DIR, 'watchlist.json');
+const BASE_DIR = path.join(os.homedir(), '.cpv-booking', 'watchlists');
 
-export function loadWatchlist(): WatchlistEntry[] {
-    if (!fs.existsSync(WATCHLIST_PATH)) return [];
-    return JSON.parse(fs.readFileSync(WATCHLIST_PATH, 'utf-8')) as WatchlistEntry[];
+function watchlistPath(userId: string): string {
+    return path.join(BASE_DIR, `${userId}.json`);
 }
 
-export function saveWatchlist(entries: WatchlistEntry[]): void {
-    fs.mkdirSync(WATCHLIST_DIR, { recursive: true });
-    fs.writeFileSync(WATCHLIST_PATH, JSON.stringify(entries, null, 2), 'utf-8');
+export function loadWatchlist(userId: string): WatchlistEntry[] {
+    const filePath = watchlistPath(userId);
+    if (!fs.existsSync(filePath)) return [];
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as WatchlistEntry[];
 }
 
-export function addToWatchlist(wantedDate: string, wantedTime: string): void {
-    const entries = loadWatchlist();
+export function saveWatchlist(userId: string, entries: WatchlistEntry[]): void {
+    fs.mkdirSync(BASE_DIR, {recursive: true});
+    fs.writeFileSync(watchlistPath(userId), JSON.stringify(entries, null, 2), 'utf-8');
+}
+
+export function addToWatchlist(userId: string, wantedDate: string, wantedTime: string): void {
+    const entries = loadWatchlist(userId);
     const alreadyPending = entries.some(
         (e) => e.wantedDate === wantedDate && e.wantedTime === wantedTime && e.status === 'pending',
     );
@@ -37,17 +41,20 @@ export function addToWatchlist(wantedDate: string, wantedTime: string): void {
         status: 'pending',
     });
 
-    saveWatchlist(entries);
+    saveWatchlist(userId, entries);
     console.log(`\n✅ Added to watchlist: ${wantedDate} at ${wantedTime}`);
-    console.log('   You will be notified when the slot is auto-booked on next run.\n');
+    console.log('   Will be auto-booked when it enters the 2-week window.\n');
 }
 
 /**
- * Checks all pending watchlist entries and attempts to auto-book any
- * that have entered the 2-week booking window.
+ * Checks all pending watchlist entries for a user and attempts to
+ * auto-book any that have entered the 2-week booking window.
  */
-export async function processPendingWatchlist(customer: AppointmentCustomer): Promise<void> {
-    const entries = loadWatchlist();
+export async function processPendingWatchlist(
+    userId: string,
+    customer: AppointmentCustomer,
+): Promise<void> {
+    const entries = loadWatchlist(userId);
     const pending = entries.filter((e) => e.status === 'pending');
 
     if (pending.length === 0) return;
@@ -76,13 +83,11 @@ export async function processPendingWatchlist(customer: AppointmentCustomer): Pr
             const match = slots.find((s) => s.toFormat('HH:mm') === entry.wantedTime);
 
             if (!match) {
-                console.log(
-                    `  ❌ Slot ${entry.wantedTime} on ${entry.wantedDate} is not available`,
-                );
+                console.log(`  ❌ ${entry.wantedTime} on ${entry.wantedDate} is not available`);
                 continue;
             }
 
-            const appointment = await createAppointment(match, customer);
+            const {appointment, staffIndex} = await createAppointment(match, customer);
             entry.status = 'booked';
             changed = true;
 
@@ -93,6 +98,7 @@ export async function processPendingWatchlist(customer: AppointmentCustomer): Pr
             console.log(`  ✅ Auto-booked from watchlist!`);
             console.log(`     ID:   ${appointment.id}`);
             console.log(`     Time: ${bookedStart} – ${bookedEnd}\n`);
+            console.log(`     ${appointment.serviceName}: ${staffIndex}`);
         } catch (err) {
             console.error(
                 `  ⚠️  Failed to auto-book ${entry.wantedDate} ${entry.wantedTime}:`,
@@ -101,5 +107,5 @@ export async function processPendingWatchlist(customer: AppointmentCustomer): Pr
         }
     }
 
-    if (changed) saveWatchlist(entries);
+    if (changed) saveWatchlist(userId, entries);
 }

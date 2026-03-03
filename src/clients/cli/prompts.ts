@@ -1,8 +1,29 @@
 import promptSync from 'prompt-sync';
 import { DateTime } from 'luxon';
+import { UserProfile } from '../../types';
 import { BOOKINGS_CONFIG } from '../../config/bookings.config';
 
 const prompt = promptSync();
+
+export function promptOnboarding(): UserProfile {
+    console.log('\n👋 Welcome! Please set up your profile first.\n');
+    const name = prompt('Full name: ').trim();
+    const emailAddress = prompt('Email address: ').trim();
+    const phone = prompt('Phone number: ').trim();
+    const membershipNumber = prompt('Membership number: ').trim();
+    const street = prompt('Address (street): ').trim();
+    return {
+        name,
+        emailAddress,
+        phone,
+        membershipNumber,
+        timeZone: BOOKINGS_CONFIG.timeZone,
+        location: {
+            displayName: street,
+            address: { street, type: 'Other' },
+        },
+    };
+}
 
 export function promptDate(): DateTime | null {
     const input = prompt('Enter date (YYYY-MM-DD): ').trim();
@@ -30,10 +51,6 @@ export function promptSlot(slots: DateTime[]): DateTime | null {
     }
 
     return slots[index];
-}
-
-export function promptOpponentName(): string {
-    return prompt("Opponent's name (press Enter to skip): ").trim() || '-';
 }
 
 export function promptWatchlistTime(): string {
