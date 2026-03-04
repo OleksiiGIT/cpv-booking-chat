@@ -1,17 +1,18 @@
 import 'dotenv/config';
 import {DateTime} from 'luxon';
 import {
-    isDateBeyondWindow,
     promptDate,
     promptOnboarding,
     promptSlot,
     promptWatchlistOrExit,
     promptWatchlistTime,
 } from './prompts';
+import {isDateBeyondWindow} from '../../utils/date.utils';
 import {profileToCustomer} from '../../services/profile.service';
 import {getProfile, saveProfile} from '../../services/user.service';
 import {addToWatchlist, processPendingWatchlist} from '../../services/watchlist.service';
 import {createAppointment, getAvailableSlots} from '../../services/booking.service';
+
 
 const USER_ID = 'default';
 

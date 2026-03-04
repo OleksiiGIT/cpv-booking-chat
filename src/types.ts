@@ -212,3 +212,28 @@ export type WatchlistEntry = {
     addedAt: string;
     status: 'pending' | 'booked' | 'missed' | 'cancelled';
 };
+
+export type ConversationStep =
+    | 'onboarding_name'
+    | 'onboarding_email'
+    | 'onboarding_phone'
+    | 'onboarding_membership'
+    | 'onboarding_address'
+    | 'awaiting_date'
+    | 'awaiting_slot'
+    | 'awaiting_watchlist_time'
+    | 'confirming'
+    | 'done';
+
+export type ConversationSession = {
+    step: ConversationStep;
+    /** Onboarding accumulator — cleared once the profile is saved */
+    onboardingName?: string;
+    onboardingEmail?: string;
+    onboardingPhone?: string;
+    onboardingMembership?: string;
+    /** Booking flow */
+    selectedDate?: string;       // 'yyyy-MM-dd'
+    availableSlots?: string[];   // ISO datetime strings fetched for selectedDate
+    selectedSlot?: string;       // ISO datetime string chosen by the user
+};

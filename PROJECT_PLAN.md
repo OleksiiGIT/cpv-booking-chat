@@ -291,18 +291,18 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ### Phase 3 — Telegram Bot
 
-- [ ] Install `telegraf` (Telegram bot framework for Node.js/TypeScript)
-- [ ] Create `src/services/session.service.ts` — get/set/clear conversation state in DynamoDB (TTL 30 min)
-- [ ] Implement conversation flow in `src/clients/telegram/handlers.ts`
+- [x] Install `telegraf` (Telegram bot framework for Node.js/TypeScript)
+- [x] Create `src/services/session.service.ts` — get/set/clear conversation state in DynamoDB (TTL 30 min)
+- [x] Implement conversation flow in `src/clients/telegram/handlers.ts`
     - Step 0: onboarding if no profile exists (`/start` command)
     - Step 1: ask for date
     - Step 2: show available slots (or offer watchlist if date > 2 weeks out)
     - Step 3: confirm booking
     - `/profile` — view/update stored profile
     - `/delete` — GDPR purge of all user data
-- [ ] Add `TELEGRAM_BOT_TOKEN` to `.env`
-- [ ] Write `src/lambda/telegram.handler.ts` Lambda entry point
-- [ ] Test end-to-end locally with `telegraf` polling mode (long-polling, no webhook needed)
+- [x] Add `TELEGRAM_BOT_TOKEN` to `.env`
+- [x] Write `src/lambda/telegram.handler.ts` Lambda entry point
+- [x] Test end-to-end locally with `telegraf` polling mode (long-polling, no webhook needed)
 
 ### Phase 4 — MVP Deployment 🚀
 
@@ -364,14 +364,14 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ## 10. Key Dependencies to Add
 
-| Package                           | Phase     | Purpose                                                   |
-|-----------------------------------|-----------|-----------------------------------------------------------|
-| `telegraf`                        | 3 (MVP)   | Telegram bot framework                                    |
-| `@aws-sdk/client-dynamodb`        | 3 (MVP)   | DynamoDB for sessions, user profiles, watchlist           |
-| `@aws-sdk/lib-dynamodb`           | 3 (MVP)   | DynamoDB document client (easier API)                     |
-| `aws-cdk-lib`                     | 4 (MVP)   | Infrastructure as Code — CDK stack                        |
-| `constructs`                      | 4 (MVP)   | CDK constructs peer dependency                            |
-| `@aws-sdk/client-secrets-manager` | 4 (MVP)   | Read OWA cookie, canary token, and bot tokens at runtime  |
-| `aws-lambda`                      | 4 (MVP)   | Lambda handler types                                      |
-| `@types/aws-lambda`               | 4 (MVP)   | TypeScript types for Lambda                               |
-| `whatsapp-cloud-api` / `twilio`   | 5         | WhatsApp messaging provider                               |
+| Package                           | Phase   | Purpose                                                  |
+|-----------------------------------|---------|----------------------------------------------------------|
+| `telegraf`                        | 3 (MVP) | Telegram bot framework                                   |
+| `@aws-sdk/client-dynamodb`        | 3 (MVP) | DynamoDB for sessions, user profiles, watchlist          |
+| `@aws-sdk/lib-dynamodb`           | 3 (MVP) | DynamoDB document client (easier API)                    |
+| `aws-cdk-lib`                     | 4 (MVP) | Infrastructure as Code — CDK stack                       |
+| `constructs`                      | 4 (MVP) | CDK constructs peer dependency                           |
+| `@aws-sdk/client-secrets-manager` | 4 (MVP) | Read OWA cookie, canary token, and bot tokens at runtime |
+| `aws-lambda`                      | 4 (MVP) | Lambda handler types                                     |
+| `@types/aws-lambda`               | 4 (MVP) | TypeScript types for Lambda                              |
+| `whatsapp-cloud-api` / `twilio`   | 5       | WhatsApp messaging provider                              |

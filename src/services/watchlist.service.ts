@@ -1,19 +1,19 @@
-import { DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { DateTime } from 'luxon';
-import { AppointmentCustomer, WatchlistEntry } from '../types';
-import { BOOKINGS_CONFIG } from '../config/bookings.config';
-import { createAppointment, getAvailableSlots } from './booking.service';
-import { docClient, TABLE_NAME } from '../db/dynamo';
+import {DeleteCommand, GetCommand, PutCommand, QueryCommand, UpdateCommand} from '@aws-sdk/lib-dynamodb';
+import {DateTime} from 'luxon';
+import {AppointmentCustomer, WatchlistEntry} from '../types';
+import {BOOKINGS_CONFIG} from '../config/bookings.config';
+import {createAppointment, getAvailableSlots} from './booking.service';
+import {docClient, TABLE_NAME} from '../db/dynamo';
 
 const pk = (userId: string) => `watchlist#${userId}`;
 const sk = (wantedDate: string, wantedTime: string) => `${wantedDate}#${wantedTime}`;
 
 export async function getWatchlist(userId: string): Promise<WatchlistEntry[]> {
-    const { Items } = await docClient.send(
+    const {Items} = await docClient.send(
         new QueryCommand({
             TableName: TABLE_NAME,
             KeyConditionExpression: 'pk = :pk',
-            ExpressionAttributeValues: { ':pk': pk(userId) },
+            ExpressionAttributeValues: {':pk': pk(userId)},
         }),
     );
     return (Items ?? []) as WatchlistEntry[];
@@ -23,7 +23,7 @@ export async function addToWatchlist(userId: string, wantedDate: string, wantedT
     const existing = await docClient.send(
         new GetCommand({
             TableName: TABLE_NAME,
-            Key: { pk: pk(userId), sk: sk(wantedDate, wantedTime) },
+            Key: {pk: pk(userId), sk: sk(wantedDate, wantedTime)},
         }),
     );
 
@@ -45,17 +45,24 @@ export async function addToWatchlist(userId: string, wantedDate: string, wantedT
             },
         }),
     );
-
-    console.log(`\n✅ Added to watchlist: ${wantedDate} at ${wantedTime}`);
-    console.log('   Will be auto-booked when it enters the 2-week window.\n');
 }
 
 export async function removeFromWatchlist(userId: string, wantedDate: string, wantedTime: string): Promise<void> {
     await docClient.send(
         new DeleteCommand({
             TableName: TABLE_NAME,
-            Key: { pk: pk(userId), sk: sk(wantedDate, wantedTime) },
+            Key: {pk: pk(userId), sk: sk(wantedDate, wantedTime)},
         }),
+    );
+}
+
+/**
+ * Removes every watchlist entry for a user. Used for GDPR data deletion.
+ */
+export async function clearWatchlist(userId: string): Promise<void> {
+    const entries = await getWatchlist(userId);
+    await Promise.all(
+        entries.map((entry) => removeFromWatchlist(userId, entry.wantedDate, entry.wantedTime)),
     );
 }
 
@@ -98,15 +105,15 @@ export async function processPendingWatchlist(
                 continue;
             }
 
-            const { appointment } = await createAppointment(match, customer);
+            const {appointment} = await createAppointment(match, customer);
 
             await docClient.send(
                 new UpdateCommand({
                     TableName: TABLE_NAME,
-                    Key: { pk: pk(userId), sk: sk(entry.wantedDate, entry.wantedTime) },
+                    Key: {pk: pk(userId), sk: sk(entry.wantedDate, entry.wantedTime)},
                     UpdateExpression: 'SET #status = :status',
-                    ExpressionAttributeNames: { '#status': 'status' },
-                    ExpressionAttributeValues: { ':status': 'booked' satisfies WatchlistEntry['status'] },
+                    ExpressionAttributeNames: {'#status': 'status'},
+                    ExpressionAttributeValues: {':status': 'booked' satisfies WatchlistEntry['status']},
                 }),
             );
 

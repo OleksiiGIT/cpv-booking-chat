@@ -57,9 +57,6 @@ export function promptWatchlistTime(): string {
     return prompt('Enter preferred time (HH:mm): ').trim();
 }
 
-export function isDateBeyondWindow(date: DateTime): boolean {
-    return date.diff(DateTime.now(), 'days').days > BOOKINGS_CONFIG.maxAdvanceDays;
-}
 
 export function promptWatchlistOrExit(date: DateTime): 'watchlist' | 'exit' {
     console.log(
