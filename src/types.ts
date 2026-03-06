@@ -213,6 +213,15 @@ export type WatchlistEntry = {
     status: 'pending' | 'booked' | 'missed' | 'cancelled';
 };
 
+export type BookingRecord = {
+    /** Microsoft Bookings appointment ID */
+    appointmentId: string;
+    startTime: string;  // ISO datetime
+    endTime: string;    // ISO datetime
+    court: string;      // 'Court 1' | 'Court 2' | 'Court'
+    createdAt: string;  // ISO datetime
+};
+
 export type ConversationStep =
     | 'onboarding_name'
     | 'onboarding_email'

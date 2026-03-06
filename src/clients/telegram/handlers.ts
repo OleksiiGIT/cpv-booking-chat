@@ -5,6 +5,7 @@ import {clearSession, getSession, setSession} from '../../services/session.servi
 import {deleteProfile, getProfile, saveProfile} from '../../services/user.service';
 import {addToWatchlist, clearWatchlist} from '../../services/watchlist.service';
 import {createAppointment, getAvailableSlots} from '../../services/booking.service';
+import {clearBookingRecords, getUserBookingRecords, saveBookingRecord} from '../../services/booking-record.service';
 import {profileToCustomer} from '../../services/profile.service';
 import {ConversationSession, UserProfile} from '../../types';
 import {BOOKINGS_CONFIG} from '../../config/bookings.config';
@@ -83,6 +84,28 @@ export async function handleDelete(ctx: Context): Promise<void> {
                 [Markup.button.callback('❌ No, keep my data', 'delete:cancel')],
             ]),
         },
+    );
+}
+
+/** /help — list all available commands. */
+export async function handleHelp(ctx: Context): Promise<void> {
+    await ctx.reply(
+        [
+            '🤖 *CPV Booking Bot — Commands*',
+            '',
+            '📅 *Booking*',
+            '/start — book a court (or set up your profile)',
+            '/mybookings — view your upcoming bookings',
+            '/cancel — cancel the current flow',
+            '',
+            '👤 *Account*',
+            '/profile — view or update your profile',
+            '/delete — delete all your data',
+            '',
+            '❓ *Help*',
+            '/help — show this message',
+        ].join('\n'),
+        {parse_mode: 'Markdown'},
     );
 }
 
@@ -299,8 +322,13 @@ async function handleConfirmYes(ctx: Context, session: ConversationSession): Pro
         const slot = DateTime.fromISO(session.selectedSlot!);
         const {appointment, staffIndex} = await createAppointment(slot, profileToCustomer(profile));
 
+        if (!appointment?.id) {
+            throw new Error('Booking API returned a success status but no appointment ID.');
+        }
+
         const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat('dd MMM yyyy, HH:mm');
         const bookedEnd = DateTime.fromISO(appointment.endTime.dateTime).toFormat('HH:mm');
+        const courtLabel = staffIndex === 1 ? 'Court 1' : staffIndex === 2 ? 'Court 2' : 'Court';
 
         await clearSession(id);
         await ctx.reply(
@@ -308,15 +336,61 @@ async function handleConfirmYes(ctx: Context, session: ConversationSession): Pro
                 '✅ *Booking Confirmed!*',
                 '',
                 `📅 ${bookedStart} – ${bookedEnd}`,
-                `🎾 Court ${staffIndex}`,
+                `🎾 ${courtLabel}`,
                 `🔖 ID: \`${appointment.id}\``,
             ].join('\n'),
             {parse_mode: 'Markdown'},
         );
+
+        // Save AFTER the reply — a DynamoDB failure must never hide a successful booking.
+        try {
+            await saveBookingRecord(id, {
+                appointmentId: appointment.id,
+                startTime: appointment.startTime.dateTime,
+                endTime: appointment.endTime.dateTime,
+                court: courtLabel,
+                createdAt: DateTime.now().toISO()!,
+            });
+        } catch (saveErr) {
+            console.error('[TelegramBot] saveBookingRecord failed (booking was created):', saveErr);
+        }
     } catch (err) {
         console.error('[TelegramBot] createAppointment error:', err);
         await ctx.reply('⚠️ Booking failed. Please try again or contact support.');
     }
+}
+
+/** /mybookings — list all upcoming bookings stored in DynamoDB for this user. */
+export async function handleMyBookings(ctx: Context): Promise<void> {
+    const id = uid(ctx);
+
+    let records: Awaited<ReturnType<typeof getUserBookingRecords>>;
+    try {
+        records = await getUserBookingRecords(id);
+    } catch (err) {
+        console.error('[TelegramBot] getUserBookingRecords error:', err);
+        await ctx.reply('⚠️ Could not fetch bookings. Please try again later.');
+        return;
+    }
+
+    if (records.length === 0) {
+        await ctx.reply('📭 You have no upcoming bookings.');
+        return;
+    }
+
+    const lines: string[] = [`📋 *Your Upcoming Bookings* (${records.length})`, ''];
+
+    for (const record of records) {
+        const start = DateTime.fromISO(record.startTime);
+        const end = DateTime.fromISO(record.endTime);
+        lines.push(
+            `📅 *${start.toFormat('EEE d MMM yyyy')}*  ${start.toFormat('HH:mm')}–${end.toFormat('HH:mm')}`,
+            `🎾 ${record.court}`,
+            '',
+        );
+    }
+
+    await ctx.reply(lines.join('\n'), {parse_mode: 'Markdown'});
 }
 
 // ─── registerHandlers ─────────────────────────────────────────────────────────
@@ -324,8 +398,10 @@ async function handleConfirmYes(ctx: Context, session: ConversationSession): Pro
 export function registerHandlers(bot: Telegraf): void {
     // Commands
     bot.start(handleStart);
+    bot.command('help', handleHelp);
     bot.command('cancel', handleCancel);
     bot.command('profile', handleProfileCommand);
+    bot.command('mybookings', handleMyBookings);
     bot.command('delete', handleDelete);
 
     // Slot selection — slot:0, slot:1, …
@@ -402,7 +478,7 @@ export function registerHandlers(bot: Telegraf): void {
     bot.action('delete:confirm', async (ctx) => {
         await ctx.answerCbQuery();
         const id = uid(ctx);
-        await Promise.all([deleteProfile(id), clearWatchlist(id), clearSession(id)]);
+        await Promise.all([deleteProfile(id), clearWatchlist(id), clearBookingRecords(id), clearSession(id)]);
         await ctx.reply('🗑 All your data has been deleted. Type /start to begin again.');
     });
 
