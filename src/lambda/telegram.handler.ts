@@ -1,7 +1,7 @@
 import 'dotenv/config';
-import {APIGatewayProxyEventV2, APIGatewayProxyResultV2} from 'aws-lambda';
-import {GetSecretValueCommand, SecretsManagerClient} from '@aws-sdk/client-secrets-manager';
-import type {Telegraf} from 'telegraf';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { GetSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import type { Telegraf } from 'telegraf';
 
 const secretsClient = new SecretsManagerClient({});
 
@@ -22,15 +22,13 @@ async function getBot(): Promise<Telegraf> {
     console.log('[TelegramHandler] Cold start — loading secrets from Secrets Manager');
     const secretName = process.env.SECRET_NAME;
     if (secretName) {
-        const res = await secretsClient.send(
-            new GetSecretValueCommand({SecretId: secretName}),
-        );
+        const res = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretName }));
 
         // SecretBinary means the secret was stored as binary — we can't use it.
         if (!res.SecretString && res.SecretBinary) {
             throw new Error(
                 `Secret "${secretName}" was stored as binary, but a JSON string is required. ` +
-                `Re-run "pnpm setup:secrets" to push the correct format.`,
+                    `Re-run "pnpm setup:secrets" to push the correct format.`,
             );
         }
 
@@ -42,8 +40,8 @@ async function getBot(): Promise<Telegraf> {
             // stored as a plain string instead of a JSON object.
             throw new Error(
                 `Secret "${secretName}" is not valid JSON. ` +
-                `Expected: {"TELEGRAM_BOT_TOKEN":"...","BOOKING_COOKIE":"...","X_OWA_CANARY":"...","BOOKING_REMOTE_URL":"..."}. ` +
-                `Re-run "pnpm setup:secrets" to push the correct format.`,
+                    `Expected: {"TELEGRAM_BOT_TOKEN":"...","BOOKING_COOKIE":"...","X_OWA_CANARY":"...","BOOKING_REMOTE_URL":"..."}. ` +
+                    `Re-run "pnpm setup:secrets" to push the correct format.`,
             );
         }
 
@@ -58,7 +56,7 @@ async function getBot(): Promise<Telegraf> {
 
     // Dynamic import ensures booking.service.ts and bot.ts are evaluated AFTER
     // the env vars above are set, so their module-level constants are correct.
-    const {bot: initialised} = await import('../clients/telegram/bot');
+    const { bot: initialised } = await import('../clients/telegram/bot');
     bot = initialised;
     console.log('[TelegramHandler] Bot initialised');
     return bot;
@@ -101,7 +99,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         console.log(`[TelegramHandler] Received ${describeUpdate(update)}`);
 
         const resolvedBot = await getBot();
-        await resolvedBot.handleUpdate(update as unknown as Parameters<typeof resolvedBot.handleUpdate>[0]);
+        await resolvedBot.handleUpdate(
+            update as unknown as Parameters<typeof resolvedBot.handleUpdate>[0],
+        );
 
         console.log('[TelegramHandler] Update handled successfully');
     } catch (err) {
@@ -110,5 +110,5 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         console.error('[TelegramHandler] Failed to process update:', err);
     }
 
-    return {statusCode: 200, body: ''};
+    return { statusCode: 200, body: '' };
 };

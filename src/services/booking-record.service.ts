@@ -1,7 +1,7 @@
-import {DeleteCommand, PutCommand, QueryCommand} from '@aws-sdk/lib-dynamodb';
-import {DateTime} from 'luxon';
-import {docClient, TABLE_NAME} from '../db/dynamo';
-import {BookingRecord} from '../types';
+import { DeleteCommand, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { DateTime } from 'luxon';
+import { docClient, TABLE_NAME } from '../db/dynamo';
+import { BookingRecord } from '../types';
 
 /**
  * DynamoDB layout for booking records:
@@ -11,10 +11,7 @@ import {BookingRecord} from '../types';
 const pk = (userId: string) => `booking#${userId}`;
 const sk = (startTime: string, appointmentId: string) => `${startTime}#${appointmentId}`;
 
-export async function saveBookingRecord(
-    userId: string,
-    record: BookingRecord,
-): Promise<void> {
+export async function saveBookingRecord(userId: string, record: BookingRecord): Promise<void> {
     await docClient.send(
         new PutCommand({
             TableName: TABLE_NAME,
@@ -34,7 +31,7 @@ export async function saveBookingRecord(
 export async function getUserBookingRecords(userId: string): Promise<BookingRecord[]> {
     const todayIso = DateTime.now().startOf('day').toISO()!;
 
-    const {Items} = await docClient.send(
+    const { Items } = await docClient.send(
         new QueryCommand({
             TableName: TABLE_NAME,
             KeyConditionExpression: 'pk = :pk AND sk >= :from',
@@ -52,11 +49,11 @@ export async function getUserBookingRecords(userId: string): Promise<BookingReco
  * Deletes every booking record for a user. Used for GDPR data deletion.
  */
 export async function clearBookingRecords(userId: string): Promise<void> {
-    const {Items} = await docClient.send(
+    const { Items } = await docClient.send(
         new QueryCommand({
             TableName: TABLE_NAME,
             KeyConditionExpression: 'pk = :pk',
-            ExpressionAttributeValues: {':pk': pk(userId)},
+            ExpressionAttributeValues: { ':pk': pk(userId) },
             ProjectionExpression: 'sk',
         }),
     );
@@ -68,7 +65,7 @@ export async function clearBookingRecords(userId: string): Promise<void> {
             docClient.send(
                 new DeleteCommand({
                     TableName: TABLE_NAME,
-                    Key: {pk: pk(userId), sk: item['sk']},
+                    Key: { pk: pk(userId), sk: item['sk'] },
                 }),
             ),
         ),

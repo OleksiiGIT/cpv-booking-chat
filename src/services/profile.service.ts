@@ -1,5 +1,5 @@
-import {AppointmentCustomer, UserProfile} from '../types';
-import {BOOKINGS_CONFIG} from '../config/bookings.config';
+import { AppointmentCustomer, UserProfile } from '../types';
+import { BOOKINGS_CONFIG } from '../config/bookings.config';
 
 /**
  * Converts a stored UserProfile into an AppointmentCustomer

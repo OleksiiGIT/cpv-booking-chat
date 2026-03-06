@@ -57,7 +57,6 @@ export function promptWatchlistTime(): string {
     return prompt('Enter preferred time (HH:mm): ').trim();
 }
 
-
 export function promptWatchlistOrExit(date: DateTime): 'watchlist' | 'exit' {
     console.log(
         `\n⚠️  ${date.toFormat('dd MMM yyyy')} is more than ${BOOKINGS_CONFIG.maxAdvanceDays} days away.`,

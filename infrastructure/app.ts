@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
-import {Construct} from 'constructs';
+import { Construct } from 'constructs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import {NodejsFunction} from 'aws-cdk-lib/aws-lambda-nodejs';
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
-import {HttpLambdaIntegration} from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 /**
@@ -23,8 +23,8 @@ export class BookingBotStack extends cdk.Stack {
         // ── DynamoDB single table (sessions + profiles + watchlist) ───────────
         const table = new dynamodb.TableV2(this, 'BookingTable', {
             tableName: 'cpv-booking',
-            partitionKey: {name: 'pk', type: dynamodb.AttributeType.STRING},
-            sortKey: {name: 'sk', type: dynamodb.AttributeType.STRING},
+            partitionKey: { name: 'pk', type: dynamodb.AttributeType.STRING },
+            sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
             billing: dynamodb.Billing.onDemand(),
             timeToLiveAttribute: 'ttl',
             // RETAIN so a stack teardown never wipes real booking / profile data.
@@ -100,11 +100,11 @@ export class BookingBotStack extends cdk.Stack {
 
         new cdk.CfnOutput(this, 'SecretArn', {
             value: botSecret.secretArn,
-            description: 'Secrets Manager ARN — populate BOOKING_COOKIE, X_OWA_CANARY, TELEGRAM_BOT_TOKEN, BOOKING_REMOTE_URL',
+            description:
+                'Secrets Manager ARN — populate BOOKING_COOKIE, X_OWA_CANARY, TELEGRAM_BOT_TOKEN, BOOKING_REMOTE_URL',
         });
     }
 }
-
 
 // ── CDK App ───────────────────────────────────────────────────────────────────
 const app = new cdk.App();

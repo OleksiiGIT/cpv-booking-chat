@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import {DateTime} from 'luxon';
+import { DateTime } from 'luxon';
 import {
     promptDate,
     promptOnboarding,
@@ -7,12 +7,11 @@ import {
     promptWatchlistOrExit,
     promptWatchlistTime,
 } from './prompts';
-import {isDateBeyondWindow} from '../../utils/date.utils';
-import {profileToCustomer} from '../../services/profile.service';
-import {getProfile, saveProfile} from '../../services/user.service';
-import {addToWatchlist, processPendingWatchlist} from '../../services/watchlist.service';
-import {createAppointment, getAvailableSlots} from '../../services/booking.service';
-
+import { isDateBeyondWindow } from '../../utils/date.utils';
+import { profileToCustomer } from '../../services/profile.service';
+import { getProfile, saveProfile } from '../../services/user.service';
+import { addToWatchlist, processPendingWatchlist } from '../../services/watchlist.service';
+import { createAppointment, getAvailableSlots } from '../../services/booking.service';
 
 const USER_ID = 'default';
 
@@ -61,7 +60,7 @@ async function main() {
 
     // 8. Book
     console.log('\nBooking appointment...');
-    const {appointment, staffIndex} = await createAppointment(selectedSlot, customer);
+    const { appointment, staffIndex } = await createAppointment(selectedSlot, customer);
 
     const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat(
         'dd MMM yyyy, HH:mm',

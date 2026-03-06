@@ -1,15 +1,19 @@
-import {Context, Markup, Telegraf} from 'telegraf';
-import {message} from 'telegraf/filters';
-import {DateTime} from 'luxon';
-import {clearSession, getSession, setSession} from '../../services/session.service';
-import {deleteProfile, getProfile, saveProfile} from '../../services/user.service';
-import {addToWatchlist, clearWatchlist} from '../../services/watchlist.service';
-import {createAppointment, getAvailableSlots} from '../../services/booking.service';
-import {clearBookingRecords, getUserBookingRecords, saveBookingRecord} from '../../services/booking-record.service';
-import {profileToCustomer} from '../../services/profile.service';
-import {ConversationSession, UserProfile} from '../../types';
-import {BOOKINGS_CONFIG} from '../../config/bookings.config';
-import {isDateBeyondWindow} from '../../utils/date.utils';
+import { Context, Markup, Telegraf } from 'telegraf';
+import { message } from 'telegraf/filters';
+import { DateTime } from 'luxon';
+import { clearSession, getSession, setSession } from '../../services/session.service';
+import { deleteProfile, getProfile, saveProfile } from '../../services/user.service';
+import { addToWatchlist, clearWatchlist } from '../../services/watchlist.service';
+import { createAppointment, getAvailableSlots } from '../../services/booking.service';
+import {
+    clearBookingRecords,
+    getUserBookingRecords,
+    saveBookingRecord,
+} from '../../services/booking-record.service';
+import { profileToCustomer } from '../../services/profile.service';
+import { ConversationSession, UserProfile } from '../../types';
+import { BOOKINGS_CONFIG } from '../../config/bookings.config';
+import { isDateBeyondWindow } from '../../utils/date.utils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,12 +29,14 @@ function uid(ctx: Context): string {
  */
 function buildDatePickerKeyboard() {
     const today = DateTime.now().startOf('day');
-    const dayButtons = Array.from({length: BOOKINGS_CONFIG.maxAdvanceDays}, (_, i) => {
-        const date = today.plus({days: i});
+    const dayButtons = Array.from({ length: BOOKINGS_CONFIG.maxAdvanceDays }, (_, i) => {
+        const date = today.plus({ days: i });
         const label =
-            i === 0 ? `Today · ${date.toFormat('d MMM')}` :
-            i === 1 ? `Tomorrow · ${date.toFormat('d MMM')}` :
-                      date.toFormat('EEE d MMM');
+            i === 0
+                ? `Today · ${date.toFormat('d MMM')}`
+                : i === 1
+                  ? `Tomorrow · ${date.toFormat('d MMM')}`
+                  : date.toFormat('EEE d MMM');
         return Markup.button.callback(label, `date:${date.toFormat('yyyy-MM-dd')}`);
     });
 
@@ -45,11 +51,11 @@ function buildDatePickerKeyboard() {
 }
 
 async function replyWithDatePicker(ctx: Context, id: string): Promise<void> {
-    await setSession(id, {step: 'awaiting_date'});
-    await ctx.reply(
-        '📅 *Which date would you like to book?*',
-        {parse_mode: 'Markdown', ...buildDatePickerKeyboard()},
-    );
+    await setSession(id, { step: 'awaiting_date' });
+    await ctx.reply('📅 *Which date would you like to book?*', {
+        parse_mode: 'Markdown',
+        ...buildDatePickerKeyboard(),
+    });
 }
 
 // ─── Command handlers ─────────────────────────────────────────────────────────
@@ -63,12 +69,12 @@ export async function handleStart(ctx: Context): Promise<void> {
 
     if (!profile) {
         await ctx.reply(
-            '👋 *Welcome to CPV Booking Bot!*\n\nLet\'s set up your profile first.\n\nWhat\'s your full name?',
-            {parse_mode: 'Markdown'},
+            "👋 *Welcome to CPV Booking Bot!*\n\nLet's set up your profile first.\n\nWhat's your full name?",
+            { parse_mode: 'Markdown' },
         );
-        await setSession(id, {step: 'onboarding_name'});
+        await setSession(id, { step: 'onboarding_name' });
     } else {
-        await ctx.reply(`👋 Welcome back, *${profile.name}*!`, {parse_mode: 'Markdown'});
+        await ctx.reply(`👋 Welcome back, *${profile.name}*!`, { parse_mode: 'Markdown' });
         await replyWithDatePicker(ctx, id);
     }
 }
@@ -99,7 +105,9 @@ export async function handleProfileCommand(ctx: Context): Promise<void> {
         ].join('\n'),
         {
             parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([[Markup.button.callback('✏️ Update profile', 'profile:update')]]),
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback('✏️ Update profile', 'profile:update')],
+            ]),
         },
     );
 }
@@ -136,7 +144,7 @@ export async function handleHelp(ctx: Context): Promise<void> {
             '❓ *Help*',
             '/help — show this message',
         ].join('\n'),
-        {parse_mode: 'Markdown'},
+        { parse_mode: 'Markdown' },
     );
 }
 
@@ -161,23 +169,31 @@ export async function handleText(ctx: Context): Promise<void> {
     switch (session.step) {
         // ── Onboarding ──────────────────────────────────────────────────────
         case 'onboarding_name':
-            await setSession(id, {step: 'onboarding_email', onboardingName: text});
-            await ctx.reply('📧 What\'s your email address?');
+            await setSession(id, { step: 'onboarding_email', onboardingName: text });
+            await ctx.reply("📧 What's your email address?");
             break;
 
         case 'onboarding_email':
-            await setSession(id, {...session, step: 'onboarding_phone', onboardingEmail: text});
-            await ctx.reply('📱 What\'s your phone number?');
+            await setSession(id, { ...session, step: 'onboarding_phone', onboardingEmail: text });
+            await ctx.reply("📱 What's your phone number?");
             break;
 
         case 'onboarding_phone':
-            await setSession(id, {...session, step: 'onboarding_membership', onboardingPhone: text});
-            await ctx.reply('🏷 What\'s your membership number?');
+            await setSession(id, {
+                ...session,
+                step: 'onboarding_membership',
+                onboardingPhone: text,
+            });
+            await ctx.reply("🏷 What's your membership number?");
             break;
 
         case 'onboarding_membership':
-            await setSession(id, {...session, step: 'onboarding_address', onboardingMembership: text});
-            await ctx.reply('🏠 What\'s your street address?');
+            await setSession(id, {
+                ...session,
+                step: 'onboarding_address',
+                onboardingMembership: text,
+            });
+            await ctx.reply("🏠 What's your street address?");
             break;
 
         case 'onboarding_address': {
@@ -189,11 +205,11 @@ export async function handleText(ctx: Context): Promise<void> {
                 timeZone: BOOKINGS_CONFIG.timeZone,
                 location: {
                     displayName: text,
-                    address: {street: text, type: 'Other'},
+                    address: { street: text, type: 'Other' },
                 },
             };
             await saveProfile(id, profile);
-            await ctx.reply('✅ Profile saved!', {parse_mode: 'Markdown'});
+            await ctx.reply('✅ Profile saved!', { parse_mode: 'Markdown' });
             await replyWithDatePicker(ctx, id);
             break;
         }
@@ -212,7 +228,7 @@ export async function handleText(ctx: Context): Promise<void> {
             await clearSession(id);
             await ctx.reply(
                 `✅ Added to watchlist!\n\n📅 ${session.selectedDate} at *${text}*\n\nI'll auto-book it as soon as it enters the 2-week booking window.`,
-                {parse_mode: 'Markdown'},
+                { parse_mode: 'Markdown' },
             );
             break;
         }
@@ -239,7 +255,7 @@ async function handleDateInput(ctx: Context, id: string, text: string): Promise<
 
     if (isDateBeyondWindow(date)) {
         // Store the date so we can use it if they confirm "add to watchlist"
-        await setSession(id, {step: 'awaiting_date', selectedDate: date.toFormat('yyyy-MM-dd')});
+        await setSession(id, { step: 'awaiting_date', selectedDate: date.toFormat('yyyy-MM-dd') });
         await ctx.reply(
             `⚠️ *${date.toFormat('dd MMM yyyy')}* is more than ${BOOKINGS_CONFIG.maxAdvanceDays} days away — outside the booking window.\n\nWould you like to add it to your watchlist instead?`,
             {
@@ -253,10 +269,9 @@ async function handleDateInput(ctx: Context, id: string, text: string): Promise<
         return;
     }
 
-    await ctx.reply(
-        `🔍 Fetching available slots for *${date.toFormat('dd MMM yyyy')}*...`,
-        {parse_mode: 'Markdown'},
-    );
+    await ctx.reply(`🔍 Fetching available slots for *${date.toFormat('dd MMM yyyy')}*...`, {
+        parse_mode: 'Markdown',
+    });
 
     let slots: DateTime[];
     try {
@@ -286,7 +301,9 @@ async function handleDateInput(ctx: Context, id: string, text: string): Promise<
         {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard(
-                slots.map((slot, i) => [Markup.button.callback(slot.toFormat('HH:mm'), `slot:${i}`)]),
+                slots.map((slot, i) => [
+                    Markup.button.callback(slot.toFormat('HH:mm'), `slot:${i}`),
+                ]),
             ),
         },
     );
@@ -312,7 +329,7 @@ async function handleSlotSelected(ctx: Context, slotIndex: number): Promise<void
     const slotTime = DateTime.fromISO(selectedSlot);
     const date = DateTime.fromFormat(session.selectedDate!, 'yyyy-MM-dd');
 
-    await setSession(id, {...session, step: 'confirming', selectedSlot});
+    await setSession(id, { ...session, step: 'confirming', selectedSlot });
 
     await ctx.reply(
         [
@@ -348,13 +365,18 @@ async function handleConfirmYes(ctx: Context, session: ConversationSession): Pro
 
     try {
         const slot = DateTime.fromISO(session.selectedSlot!);
-        const {appointment, staffIndex} = await createAppointment(slot, profileToCustomer(profile));
+        const { appointment, staffIndex } = await createAppointment(
+            slot,
+            profileToCustomer(profile),
+        );
 
         if (!appointment?.id) {
             throw new Error('Booking API returned a success status but no appointment ID.');
         }
 
-        const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat('dd MMM yyyy, HH:mm');
+        const bookedStart = DateTime.fromISO(appointment.startTime.dateTime).toFormat(
+            'dd MMM yyyy, HH:mm',
+        );
         const bookedEnd = DateTime.fromISO(appointment.endTime.dateTime).toFormat('HH:mm');
         const courtLabel = staffIndex === 1 ? 'Court 1' : staffIndex === 2 ? 'Court 2' : 'Court';
 
@@ -367,7 +389,7 @@ async function handleConfirmYes(ctx: Context, session: ConversationSession): Pro
                 `🎾 ${courtLabel}`,
                 `🔖 ID: \`${appointment.id}\``,
             ].join('\n'),
-            {parse_mode: 'Markdown'},
+            { parse_mode: 'Markdown' },
         );
 
         // Save AFTER the reply — a DynamoDB failure must never hide a successful booking.
@@ -418,7 +440,7 @@ export async function handleMyBookings(ctx: Context): Promise<void> {
         );
     }
 
-    await ctx.reply(lines.join('\n'), {parse_mode: 'Markdown'});
+    await ctx.reply(lines.join('\n'), { parse_mode: 'Markdown' });
 }
 
 // ─── registerHandlers ─────────────────────────────────────────────────────────
@@ -442,8 +464,10 @@ export function registerHandlers(bot: Telegraf): void {
     // Date picker — manual text entry fallback
     bot.action('date:manual', async (ctx) => {
         await ctx.answerCbQuery();
-        await setSession(uid(ctx), {step: 'awaiting_date'});
-        await ctx.reply('📅 Enter a date _(DD/MM/YYYY, e.g. 15/03/2026)_:', {parse_mode: 'Markdown'});
+        await setSession(uid(ctx), { step: 'awaiting_date' });
+        await ctx.reply('📅 Enter a date _(DD/MM/YYYY, e.g. 15/03/2026)_:', {
+            parse_mode: 'Markdown',
+        });
     });
 
     // Slot selection — slot:0, slot:1, …
@@ -483,11 +507,10 @@ export function registerHandlers(bot: Telegraf): void {
             await ctx.reply('⚠️ Session expired. Type /start to begin again.');
             return;
         }
-        await setSession(id, {...session, step: 'awaiting_watchlist_time'});
-        await ctx.reply(
-            '⏰ What time would you prefer? _(HH:mm, e.g. 10:00)_',
-            {parse_mode: 'Markdown'},
-        );
+        await setSession(id, { ...session, step: 'awaiting_watchlist_time' });
+        await ctx.reply('⏰ What time would you prefer? _(HH:mm, e.g. 10:00)_', {
+            parse_mode: 'Markdown',
+        });
     });
 
     bot.action('watchlist:no', async (ctx) => {
@@ -504,18 +527,22 @@ export function registerHandlers(bot: Telegraf): void {
     // Profile update — re-runs onboarding
     bot.action('profile:update', async (ctx) => {
         await ctx.answerCbQuery();
-        await setSession(uid(ctx), {step: 'onboarding_name'});
-        await ctx.reply(
-            "Let's update your profile.\n\n*What's your full name?*",
-            {parse_mode: 'Markdown'},
-        );
+        await setSession(uid(ctx), { step: 'onboarding_name' });
+        await ctx.reply("Let's update your profile.\n\n*What's your full name?*", {
+            parse_mode: 'Markdown',
+        });
     });
 
     // GDPR delete
     bot.action('delete:confirm', async (ctx) => {
         await ctx.answerCbQuery();
         const id = uid(ctx);
-        await Promise.all([deleteProfile(id), clearWatchlist(id), clearBookingRecords(id), clearSession(id)]);
+        await Promise.all([
+            deleteProfile(id),
+            clearWatchlist(id),
+            clearBookingRecords(id),
+            clearSession(id),
+        ]);
         await ctx.reply('🗑 All your data has been deleted. Type /start to begin again.');
     });
 

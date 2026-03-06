@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import {CreateTableCommand, DynamoDBClient, ListTablesCommand,} from '@aws-sdk/client-dynamodb';
+import { CreateTableCommand, DynamoDBClient, ListTablesCommand } from '@aws-sdk/client-dynamodb';
 
 const client = new DynamoDBClient({
     region: process.env.AWS_REGION || 'eu-west-2',
@@ -13,7 +13,7 @@ const client = new DynamoDBClient({
 const TABLE_NAME = process.env.DYNAMODB_TABLE_NAME || 'cpv-booking';
 
 async function dbSetup() {
-    const {TableNames} = await client.send(new ListTablesCommand({}));
+    const { TableNames } = await client.send(new ListTablesCommand({}));
 
     if (TableNames?.includes(TABLE_NAME)) {
         console.log(`✅ Table "${TABLE_NAME}" already exists.`);
@@ -24,12 +24,12 @@ async function dbSetup() {
         new CreateTableCommand({
             TableName: TABLE_NAME,
             AttributeDefinitions: [
-                {AttributeName: 'pk', AttributeType: 'S'},
-                {AttributeName: 'sk', AttributeType: 'S'},
+                { AttributeName: 'pk', AttributeType: 'S' },
+                { AttributeName: 'sk', AttributeType: 'S' },
             ],
             KeySchema: [
-                {AttributeName: 'pk', KeyType: 'HASH'},
-                {AttributeName: 'sk', KeyType: 'RANGE'},
+                { AttributeName: 'pk', KeyType: 'HASH' },
+                { AttributeName: 'sk', KeyType: 'RANGE' },
             ],
             BillingMode: 'PAY_PER_REQUEST',
         }),

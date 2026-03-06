@@ -43,7 +43,7 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SECRET_NAME = 'cpv-booking/bot';
 const AWS_PROFILE = process.env.AWS_PROFILE ?? 'oleksii-personal';
-const AWS_REGION  = process.env.AWS_REGION  ?? 'eu-west-2';
+const AWS_REGION = process.env.AWS_REGION ?? 'eu-west-2';
 
 const REQUIRED_KEYS = [
     'TELEGRAM_BOT_TOKEN',
@@ -123,8 +123,8 @@ async function setupSecrets(): Promise<void> {
         if (err instanceof ResourceNotFoundException) {
             console.error(
                 `❌ Secret "${SECRET_NAME}" not found in region "${AWS_REGION}".\n` +
-                `   Deploy the CDK stack first ("pnpm cdk:deploy"), then re-run this script.\n` +
-                `   Also verify AWS_REGION in .env matches where the stack was deployed.`,
+                    `   Deploy the CDK stack first ("pnpm cdk:deploy"), then re-run this script.\n` +
+                    `   Also verify AWS_REGION in .env matches where the stack was deployed.`,
             );
             process.exit(1);
         }

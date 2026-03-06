@@ -216,10 +216,10 @@ export type WatchlistEntry = {
 export type BookingRecord = {
     /** Microsoft Bookings appointment ID */
     appointmentId: string;
-    startTime: string;  // ISO datetime
-    endTime: string;    // ISO datetime
-    court: string;      // 'Court 1' | 'Court 2' | 'Court'
-    createdAt: string;  // ISO datetime
+    startTime: string; // ISO datetime
+    endTime: string; // ISO datetime
+    court: string; // 'Court 1' | 'Court 2' | 'Court'
+    createdAt: string; // ISO datetime
 };
 
 export type ConversationStep =
@@ -242,7 +242,7 @@ export type ConversationSession = {
     onboardingPhone?: string;
     onboardingMembership?: string;
     /** Booking flow */
-    selectedDate?: string;       // 'yyyy-MM-dd'
-    availableSlots?: string[];   // ISO datetime strings fetched for selectedDate
-    selectedSlot?: string;       // ISO datetime string chosen by the user
+    selectedDate?: string; // 'yyyy-MM-dd'
+    availableSlots?: string[]; // ISO datetime strings fetched for selectedDate
+    selectedSlot?: string; // ISO datetime string chosen by the user
 };
