@@ -8,6 +8,7 @@ node_modules/
 
 # Build output
 dist/
+dist-cdk/
 
 # Local DynamoDB data
 .dynamodb/
@@ -31,3 +32,4 @@ Thumbs.db
 *.ntvs*
 *.njsproj
 *.sln
+cdk.out
