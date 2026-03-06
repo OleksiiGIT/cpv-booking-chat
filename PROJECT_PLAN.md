@@ -360,6 +360,93 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Add GDPR `/delete` command confirmation + audit log
 - [ ] Notifications of upcoming booking
 
+### Phase 9 — Booking Cancellation
+
+- [ ] Add `cancelAppointment(appointmentId)` to `BookingService` — calls Microsoft Bookings API to cancel
+- [ ] Store `appointmentId` (returned by `createAppointment`) in DynamoDB on the booking record so it can be referenced
+  later
+- [ ] Extend `src/services/booking-record.service.ts` — CRUD for booking records in DynamoDB
+  (`PK: "booking#<userId>", SK: <appointmentId>`)
+- [ ] Add `/cancel` command to the Telegram bot — lists the user's upcoming bookings and lets them pick one to cancel
+- [ ] Add cancellation step to the CLI client (`prompts.ts`)
+- [ ] Send a cancellation confirmation message to the user after successful cancellation
+- [ ] Mark the booking record status as `"cancelled"` in DynamoDB; do not delete (history / audit trail)
+
+### Phase 10 — Opponent Details in Booking
+
+- [ ] Extend the conversation flow in both CLI and Telegram: after slot confirmation, ask for the **opponent's name**
+  and
+  **opponent's email** and **opponent's phone**
+- [ ] Store opponent details (`opponentName`, `opponentEmail`, `opponentPhone`) on the DynamoDB booking record (in
+  `booking-record.service.ts`)
+- [ ] ⚠️ **Outlook constraint:** the `opponentName` field sent to the Microsoft Bookings API must **always be an empty
+  string** — Outlook does not support later changes to this field. Opponent identity is managed exclusively in DynamoDB.
+- [ ] Include opponent details in booking confirmation messages sent to the booking person
+
+### Phase 11 — Notifications for Booking Person & Opponent
+
+- [ ] Create `src/services/notification.service.ts` — central hub for dispatching notifications across channels
+  (Telegram message, WhatsApp template, SES email)
+- [ ] After a booking is confirmed, send a confirmation message to the booking person via their preferred channel
+- [ ] Send a notification email (SES) to the opponent's email address with full booking details (date, time, location,
+  booking person's name and contact)
+- [ ] On booking **cancellation**, send cancellation notifications to both the booking person and the opponent
+- [ ] Hook `notification.service.ts` into the watchlist poller: notify on auto-book success, slot unavailability, and
+  missed watchlist entries
+- [ ] Add `src/lambda/notification.handler.ts` if async fan-out via SQS/SNS is needed at scale
+
+### Phase 12 — Contact Preferences & Notification Settings
+
+- [ ] Extend the user profile DynamoDB schema with a `contactPreferences` object:
+  ```typescript
+  contactPreferences: {
+    allowNotifications: boolean;   // master switch — blocks all bot-initiated messages when false
+    // future: allowEmail, allowSms, ...
+  }
+  ```
+- [ ] In `notification.service.ts`, check `allowNotifications` before sending any message to a user; skip silently if
+  disabled
+- [ ] Extend the `/profile` command (Telegram) to display and toggle notification preferences
+- [ ] Add a dedicated `/notifications` command (or inline keyboard shortcut) as a convenience alias for managing
+  notification settings
+- [ ] Update the onboarding flow to ask the user for their notification preference (default: `true`) and record explicit
+  consent
+
+### Phase 13 — Calendar Integration
+
+- [ ] Extend the user profile DynamoDB schema with a `calendarIntegration` object:
+  ```typescript
+  calendarIntegration: {
+    enabled: boolean;                           // master switch — off by default
+    provider: "google" | "apple" | "ics" | null;
+    // provider-specific OAuth tokens stored separately (DynamoDB or Secrets Manager, per user)
+  }
+  ```
+- [ ] Extend the `/profile` command (Telegram) to configure calendar integration (provider + enable/disable)
+- [ ] After a booking is confirmed, if `calendarIntegration.enabled`:
+    - Generate an `.ics` file (iCalendar format) for the appointment using the `ics` package
+    - Send the `.ics` file / a "Add to Calendar" link to the user via their notification channel
+    - For `provider: "google"`: use the Google Calendar API (OAuth 2.0 flow) to create the event directly in the user's
+      calendar
+- [ ] On booking **cancellation**, send a calendar removal event (`.ics` with `METHOD:CANCEL`) or delete the Google
+  Calendar event via API
+- [ ] Store OAuth 2.0 tokens per user in DynamoDB (encrypted) or Secrets Manager; handle token refresh
+- [ ] Add calendar-integration CDK resources: Lambda environment variables, IAM roles for Secrets Manager access
+
+### Phase 14 — Opponent Change
+
+- [ ] Add `/change-opponent` command to the Telegram bot — allows the booking creator to update the opponent on an
+  existing booking
+- [ ] Look up the existing booking record in DynamoDB via `booking-record.service.ts` (list upcoming bookings, let user
+  pick one)
+- [ ] Update `opponentName` and `opponentEmail` on the DynamoDB booking record only
+- [ ] ⚠️ **Outlook constraint:** do **NOT** call the Microsoft Bookings API to update the appointment — Outlook does not
+  support editing attendee details after creation. The `opponentName` sent to the API at booking time is always empty
+  (see Phase 10).
+- [ ] Notify the **new opponent** (email via SES) with the booking details
+- [ ] Notify the **old opponent** (if a previous email was stored) that they have been removed from the booking
+- [ ] Send a confirmation to the booking person that the opponent has been successfully updated
+
 ---
 
 ## 10. Key Dependencies to Add
@@ -375,3 +462,6 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 | `aws-lambda`                      | 4 (MVP) | Lambda handler types                                     |
 | `@types/aws-lambda`               | 4 (MVP) | TypeScript types for Lambda                              |
 | `whatsapp-cloud-api` / `twilio`   | 5       | WhatsApp messaging provider                              |
+| `@aws-sdk/client-ses`             | 11      | Send email notifications to booking person and opponent  |
+| `ics`                             | 13      | Generate `.ics` (iCalendar) files for calendar invites   |
+| `googleapis`                      | 13      | Google Calendar API — create/delete events via OAuth 2.0 |
