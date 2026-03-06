@@ -18,6 +18,40 @@ function uid(ctx: Context): string {
     return `telegram#${ctx.from!.id}`;
 }
 
+/**
+ * Renders an inline keyboard with one button per available day in the booking
+ * window (today → today + maxAdvanceDays), grouped into rows of 3, plus a
+ * "Enter date manually" fallback button at the bottom.
+ */
+function buildDatePickerKeyboard() {
+    const today = DateTime.now().startOf('day');
+    const dayButtons = Array.from({length: BOOKINGS_CONFIG.maxAdvanceDays}, (_, i) => {
+        const date = today.plus({days: i});
+        const label =
+            i === 0 ? `Today · ${date.toFormat('d MMM')}` :
+            i === 1 ? `Tomorrow · ${date.toFormat('d MMM')}` :
+                      date.toFormat('EEE d MMM');
+        return Markup.button.callback(label, `date:${date.toFormat('yyyy-MM-dd')}`);
+    });
+
+    // 3 buttons per row
+    const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+    for (let i = 0; i < dayButtons.length; i += 3) {
+        rows.push(dayButtons.slice(i, i + 3));
+    }
+    rows.push([Markup.button.callback('📅 Enter date manually', 'date:manual')]);
+
+    return Markup.inlineKeyboard(rows);
+}
+
+async function replyWithDatePicker(ctx: Context, id: string): Promise<void> {
+    await setSession(id, {step: 'awaiting_date'});
+    await ctx.reply(
+        '📅 *Which date would you like to book?*',
+        {parse_mode: 'Markdown', ...buildDatePickerKeyboard()},
+    );
+}
+
 // ─── Command handlers ─────────────────────────────────────────────────────────
 
 /**
@@ -34,11 +68,8 @@ export async function handleStart(ctx: Context): Promise<void> {
         );
         await setSession(id, {step: 'onboarding_name'});
     } else {
-        await ctx.reply(
-            `👋 Welcome back, *${profile.name}*!\n\nWhich date would you like to book? _(DD/MM/YYYY)_`,
-            {parse_mode: 'Markdown'},
-        );
-        await setSession(id, {step: 'awaiting_date'});
+        await ctx.reply(`👋 Welcome back, *${profile.name}*!`, {parse_mode: 'Markdown'});
+        await replyWithDatePicker(ctx, id);
     }
 }
 
@@ -94,13 +125,13 @@ export async function handleHelp(ctx: Context): Promise<void> {
             '🤖 *CPV Booking Bot — Commands*',
             '',
             '📅 *Booking*',
-            '/start — book a court (or set up your profile)',
+            '/start — pick a date and book a court',
             '/mybookings — view your upcoming bookings',
             '/cancel — cancel the current flow',
             '',
             '👤 *Account*',
             '/profile — view or update your profile',
-            '/delete — delete all your data',
+            '/delete — permanently delete your profile, bookings & watchlist',
             '',
             '❓ *Help*',
             '/help — show this message',
@@ -162,11 +193,8 @@ export async function handleText(ctx: Context): Promise<void> {
                 },
             };
             await saveProfile(id, profile);
-            await setSession(id, {step: 'awaiting_date'});
-            await ctx.reply(
-                '✅ Profile saved!\n\nWhich date would you like to book? _(DD/MM/YYYY)_',
-                {parse_mode: 'Markdown'},
-            );
+            await ctx.reply('✅ Profile saved!', {parse_mode: 'Markdown'});
+            await replyWithDatePicker(ctx, id);
             break;
         }
 
@@ -404,6 +432,20 @@ export function registerHandlers(bot: Telegraf): void {
     bot.command('mybookings', handleMyBookings);
     bot.command('delete', handleDelete);
 
+    // Date picker — tapping a day button
+    bot.action(/^date:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
+        await ctx.answerCbQuery();
+        const date = DateTime.fromFormat(ctx.match[1], 'yyyy-MM-dd');
+        await handleDateInput(ctx, uid(ctx), date.toFormat('dd/MM/yyyy'));
+    });
+
+    // Date picker — manual text entry fallback
+    bot.action('date:manual', async (ctx) => {
+        await ctx.answerCbQuery();
+        await setSession(uid(ctx), {step: 'awaiting_date'});
+        await ctx.reply('📅 Enter a date _(DD/MM/YYYY, e.g. 15/03/2026)_:', {parse_mode: 'Markdown'});
+    });
+
     // Slot selection — slot:0, slot:1, …
     bot.action(/^slot:(\d+)$/, async (ctx) => {
         await ctx.answerCbQuery();
@@ -450,18 +492,13 @@ export function registerHandlers(bot: Telegraf): void {
 
     bot.action('watchlist:no', async (ctx) => {
         await ctx.answerCbQuery();
-        await clearSession(uid(ctx));
-        await ctx.reply('Cancelled. Type /start to choose a different date.');
+        await replyWithDatePicker(ctx, uid(ctx));
     });
 
     // Retry date after no slots found
     bot.action('retry:date', async (ctx) => {
         await ctx.answerCbQuery();
-        await setSession(uid(ctx), {step: 'awaiting_date'});
-        await ctx.reply(
-            'Which date would you like to book? _(DD/MM/YYYY)_',
-            {parse_mode: 'Markdown'},
-        );
+        await replyWithDatePicker(ctx, uid(ctx));
     });
 
     // Profile update — re-runs onboarding
