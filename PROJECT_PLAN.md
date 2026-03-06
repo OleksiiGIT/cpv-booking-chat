@@ -354,11 +354,11 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ### Phase 8 — Hardening
 
-- [ ] Rotate OWA cookie + canary token via Secrets Manager (automate rotation reminders)
 - [ ] Add CloudWatch alarms for Lambda errors and DynamoDB throttles
 - [ ] Add input validation for date and slot selection across all clients
 - [ ] Handle edge cases: no slots available, booking conflict, API timeout, watchlist slot missed
 - [ ] Add GDPR `/delete` command confirmation + audit log
+- [ ] Notifications of upcoming booking
 
 ---
 
