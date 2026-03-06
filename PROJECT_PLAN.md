@@ -308,16 +308,16 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 > **Milestone:** fully working booking flow for both CLI and Telegram, running in production on AWS.
 
-- [ ] Install AWS CDK: `pnpm add -D aws-cdk-lib constructs`
-- [ ] Write `infrastructure/stacks/booking-bot-stack.ts` (MVP scope):
+- [x] Install AWS CDK: `pnpm add -D aws-cdk-lib constructs`
+- [x] Write `infrastructure/stacks/booking-bot-stack.ts` (MVP scope):
     - `NodejsFunction` — Telegram handler Lambda
     - `HttpApi` (API Gateway) — single POST `/telegram` route
     - `Table` — DynamoDB single-table (sessions + profiles + watchlist)
     - `Secret` — OWA cookie, canary token, and `TELEGRAM_BOT_TOKEN` in Secrets Manager
-- [ ] Add `DYNAMODB_TABLE_NAME` and AWS credentials to production environment / GitHub secrets
-- [ ] `cdk deploy`
-- [ ] Register Telegram webhook: `setWebhook` → API Gateway URL
-- [ ] Smoke-test the full booking flow end-to-end via Telegram in production
+- [x] Add `DYNAMODB_TABLE_NAME` and AWS credentials to production environment / GitHub secrets
+- [x] `cdk deploy`
+- [x] Register Telegram webhook: `setWebhook` → API Gateway URL
+- [x] Smoke-test the full booking flow end-to-end via Telegram in production
 
 ---
 
