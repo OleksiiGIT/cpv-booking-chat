@@ -335,7 +335,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [x] Add `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_VERIFY_TOKEN` to `secrets-setup.ts`
 - [x] Add `WhatsAppHandler` Lambda + GET+POST `/whatsapp` routes to CDK stack (`infrastructure/app.ts`)
 - [x] Add `dev:whatsapp` script to `package.json` (local server on port 3001, expose via ngrok)
-- [ ] Register webhook URL with Meta Developer Console after `cdk deploy`
+- [x] Register webhook URL with Meta Developer Console after `cdk deploy`
 
 ### Phase 6 — Advance Booking Watchlist (bots)
 
