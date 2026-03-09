@@ -346,9 +346,6 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
     - Notify user of success or unavailability via Telegram / WhatsApp
 - [ ] Add "notify only" option — user can opt out of auto-booking and just get alerted
 - [ ] Wire watchlist offer into both bot handlers when user picks a date > 2 weeks out
-
-### Phase 7 — Full Production Deployment (WhatsApp + Watchlist)
-
 - [ ] Extend `infrastructure/stacks/booking-bot-stack.ts`:
     - `NodejsFunction` — WhatsApp handler Lambda + POST `/whatsapp` route
     - `NodejsFunction` — WatchlistPoller Lambda
@@ -356,15 +353,13 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] `cdk deploy`
 - [ ] Register WhatsApp webhook in Meta Developer Console
 
-### Phase 8 — Hardening
+### Phase 7 — Hardening
 
 - [ ] Add CloudWatch alarms for Lambda errors and DynamoDB throttles
 - [ ] Add input validation for date and slot selection across all clients
 - [ ] Handle edge cases: no slots available, booking conflict, API timeout, watchlist slot missed
-- [ ] Add GDPR `/delete` command confirmation + audit log
-- [ ] Notifications of upcoming booking
 
-### Phase 9 — Booking Cancellation
+### Phase 8 — Booking Cancellation
 
 - [ ] Add `cancelAppointment(appointmentId)` to `BookingService` — calls Microsoft Bookings API to cancel
 - [ ] Store `appointmentId` (returned by `createAppointment`) in DynamoDB on the booking record so it can be referenced
@@ -376,7 +371,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Send a cancellation confirmation message to the user after successful cancellation
 - [ ] Mark the booking record status as `"cancelled"` in DynamoDB; do not delete (history / audit trail)
 
-### Phase 10 — Opponent Details in Booking
+### Phase 9 — Opponent Details in Booking
 
 - [ ] Extend the conversation flow in both CLI and Telegram: after slot confirmation, ask for the **opponent's name**
   and
@@ -387,7 +382,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
   string** — Outlook does not support later changes to this field. Opponent identity is managed exclusively in DynamoDB.
 - [ ] Include opponent details in booking confirmation messages sent to the booking person
 
-### Phase 11 — Notifications for Booking Person & Opponent
+### Phase 10 — Notifications for Booking Person & Opponent
 
 - [ ] Create `src/services/notification.service.ts` — central hub for dispatching notifications across channels
   (Telegram message, WhatsApp template, SES email)
@@ -399,7 +394,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
   missed watchlist entries
 - [ ] Add `src/lambda/notification.handler.ts` if async fan-out via SQS/SNS is needed at scale
 
-### Phase 12 — Contact Preferences & Notification Settings
+### Phase 11 — Contact Preferences & Notification Settings
 
 - [ ] Extend the user profile DynamoDB schema with a `contactPreferences` object:
   ```typescript
@@ -416,7 +411,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Update the onboarding flow to ask the user for their notification preference (default: `true`) and record explicit
   consent
 
-### Phase 13 — Calendar Integration
+### Phase 12 — Calendar Integration
 
 - [ ] Extend the user profile DynamoDB schema with a `calendarIntegration` object:
   ```typescript
@@ -437,7 +432,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Store OAuth 2.0 tokens per user in DynamoDB (encrypted) or Secrets Manager; handle token refresh
 - [ ] Add calendar-integration CDK resources: Lambda environment variables, IAM roles for Secrets Manager access
 
-### Phase 14 — Opponent Change
+### Phase 13 — Opponent Change
 
 - [ ] Add `/change-opponent` command to the Telegram bot — allows the booking creator to update the opponent on an
   existing booking
