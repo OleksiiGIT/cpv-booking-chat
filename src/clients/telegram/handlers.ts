@@ -29,7 +29,7 @@ function uid(ctx: Context): string {
  */
 function buildDatePickerKeyboard() {
     const today = DateTime.now().startOf('day');
-    const dayButtons = Array.from({ length: BOOKINGS_CONFIG.maxAdvanceDays }, (_, i) => {
+    const dayButtons = Array.from({ length: BOOKINGS_CONFIG.maxAdvanceDays + 1 }, (_, i) => {
         const date = today.plus({ days: i });
         const label =
             i === 0

@@ -325,13 +325,17 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ---
 
-### Phase 5 — WhatsApp Bot
+### Phase 5 — WhatsApp Bot ✅
 
-- [ ] Choose provider: **Meta Cloud API** (free, official) or **Twilio** (easier setup)
-- [ ] Implement same conversation flow in `src/clients/whatsapp/handlers.ts` (reuse session + user services)
-- [ ] Write `src/lambda/whatsapp.handler.ts` Lambda entry point
-- [ ] Add `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` to Secrets Manager
-- [ ] Register webhook URL with Meta Developer Console / Twilio
+- [x] Choose provider: **Meta Cloud API** (free, official)
+- [x] Implement same conversation flow in `src/clients/whatsapp/handlers.ts` (reuse session + user services)
+- [x] Write `src/clients/whatsapp/bot.ts` — WhatsApp Cloud API client (sendText, sendButtons, sendList)
+- [x] Write `src/clients/whatsapp/server.ts` — local dev webhook server (use with ngrok)
+- [x] Write `src/lambda/whatsapp.handler.ts` Lambda entry point (GET verification + POST messages)
+- [x] Add `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_VERIFY_TOKEN` to `secrets-setup.ts`
+- [x] Add `WhatsAppHandler` Lambda + GET+POST `/whatsapp` routes to CDK stack (`infrastructure/app.ts`)
+- [x] Add `dev:whatsapp` script to `package.json` (local server on port 3001, expose via ngrok)
+- [ ] Register webhook URL with Meta Developer Console after `cdk deploy`
 
 ### Phase 6 — Advance Booking Watchlist (bots)
 

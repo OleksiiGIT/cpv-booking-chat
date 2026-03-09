@@ -9,7 +9,8 @@
  * it already exists.  Safe to re-run at any time.
  *
  * Required keys in .env:
- *   TELEGRAM_BOT_TOKEN, BOOKING_COOKIE, X_OWA_CANARY, BOOKING_REMOTE_URL
+ *   TELEGRAM_BOT_TOKEN, BOOKING_COOKIE, X_OWA_CANARY, BOOKING_REMOTE_URL,
+ *   WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_VERIFY_TOKEN
  *
  * AWS targeting (must match the region where the CDK stack was deployed):
  *   AWS_PROFILE  — defaults to "oleksii-personal"  (same as cdk:deploy)
@@ -50,6 +51,9 @@ const REQUIRED_KEYS = [
     'BOOKING_COOKIE',
     'X_OWA_CANARY',
     'BOOKING_REMOTE_URL',
+    'WHATSAPP_ACCESS_TOKEN',
+    'WHATSAPP_PHONE_ID',
+    'WHATSAPP_VERIFY_TOKEN',
 ] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,8 +99,8 @@ async function setupSecrets(): Promise<void> {
             new CreateSecretCommand({
                 Name: SECRET_NAME,
                 Description:
-                    'Telegram bot token, OWA session cookie (BOOKING_COOKIE), ' +
-                    'OWA canary header (X_OWA_CANARY), and Bookings API URL. ' +
+                    'Bot tokens (Telegram + WhatsApp), OWA session cookie (BOOKING_COOKIE), ' +
+                    'OWA canary header (X_OWA_CANARY), Bookings API URL, and WhatsApp verify token. ' +
                     'Managed via pnpm setup:secrets.',
                 SecretString: secretString,
             }),
