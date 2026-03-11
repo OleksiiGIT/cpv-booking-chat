@@ -5,9 +5,9 @@
  * Key differences from Telegram:
  *  - No slash commands: keywords (hi, cancel, profile, …) trigger flows.
  *  - No "inline keyboard edit": each interaction sends a fresh message.
- *  - Date picker uses two paginated list messages (week 0 / week 1) because
- *    WhatsApp list messages are capped at 10 rows total.
- *  - UserId format: "whatsapp#<phoneNumber>"
+ *  - Booking date/time uses a 3-step picker (week → day → time period → slot)
+ *    because WhatsApp list messages are hard-capped at 10 rows total.
+ *  - UserId format: "WhatsApp#<phoneNumber>"
  */
 import { DateTime } from 'luxon';
 import { clearSession, getSession, setSession } from '../../services/session.service';
@@ -23,7 +23,7 @@ import { profileToCustomer } from '../../services/profile.service';
 import { ConversationSession, InstantBookingResult, UserProfile } from '../../types';
 import { BOOKINGS_CONFIG } from '../../config/bookings.config';
 import { isDateBeyondWindow, parseInstantBookingInput } from '../../utils/date.utils';
-import { ButtonOption, ListRow, ListSection, sendButtons, sendList, sendText } from './bot';
+import { ButtonOption, ListRow, sendButtons, sendList, sendText } from './bot';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,45 +52,166 @@ function cap(str: string, max: number): string {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+// ─── Time period definitions ──────────────────────────────────────────────────
+
+const TIME_PERIODS = [
+    { key: 'morning', label: 'Morning', range: '06:00–12:00', start: 6, end: 12 },
+    { key: 'afternoon', label: 'Afternoon', range: '12:00–17:00', start: 12, end: 17 },
+    { key: 'evening', label: 'Evening', range: '17:00–21:00', start: 17, end: 21 },
+    { key: 'night', label: 'Night', range: '21:00–22:00', start: 21, end: 22 },
+] as const;
+
+type PeriodKey = (typeof TIME_PERIODS)[number]['key'];
+
+// ─── Step 1 — Week picker ─────────────────────────────────────────────────────
+
 /**
- * Sends a paginated date-picker list.
- *
- * WhatsApp list messages are hard-capped at 10 rows across all sections.
- * We split 15 dates (today + 14) across two "pages":
- *   week=0 → days 0–6  (7 rows) + "Next week →" + "Enter manually" = 9 rows ✓
- *   week=1 → days 7–14 (8 rows) + "← Prev week" + "Enter manually" = 10 rows ✓
+ * Sends a list of ISO week ranges (Mon–Sun) that fall within the 14-day
+ * booking window.  The first row always starts from *today* (not the
+ * preceding Monday).  Each week occupies one row, so we stay well under the
+ * 10-row hard cap.  A "Enter date manually" row is appended for watchlist use.
  */
-async function replyWithDatePicker(to: string, userId: string, week = 0): Promise<void> {
-    await setSession(userId, { step: 'awaiting_date' });
+async function replyWithWeekPicker(to: string, userId: string): Promise<void> {
+    await setSession(userId, { step: 'awaiting_week' });
 
     const today = DateTime.now().startOf('day');
-    const totalDays = BOOKINGS_CONFIG.maxAdvanceDays + 1; // 15
-    const startDay = week * 7;
-    const endDay = Math.min(startDay + 7, totalDays);
+    const windowEnd = today.plus({ days: BOOKINGS_CONFIG.maxAdvanceDays });
 
-    const dateRows = Array.from({ length: endDay - startDay }, (_, i) => {
-        const dayIndex = startDay + i;
-        const date = today.plus({ days: dayIndex });
+    const rows: ListRow[] = [];
+    let cursor = today;
+
+    while (cursor <= windowEnd) {
+        // end of the ISO week containing `cursor` (always a Sunday)
+        const endOfWeek = cursor.endOf('week').startOf('day');
+        const weekEnd = endOfWeek <= windowEnd ? endOfWeek : windowEnd;
+
+        // Row title: "11–15 Mar" (same month) or "28 Mar–3 Apr" (cross-month)
         const label =
-            dayIndex === 0
-                ? `Today · ${date.toFormat('d MMM')}`
-                : dayIndex === 1
-                  ? `Tomorrow · ${date.toFormat('d MMM')}`
-                  : date.toFormat('EEE d MMM');
-        return { id: `date:${date.toFormat('yyyy-MM-dd')}`, title: cap(label, 24) };
-    });
+            cursor.month === weekEnd.month
+                ? `${cursor.toFormat('d')}–${weekEnd.toFormat('d MMM')}`
+                : `${cursor.toFormat('d MMM')}–${weekEnd.toFormat('d MMM')}`;
 
-    const optionRows: ListRow[] = [];
-    if (week === 0 && totalDays > 7) optionRows.push({ id: 'date:week:1', title: 'Next week →' });
-    if (week === 1) optionRows.push({ id: 'date:week:0', title: '← Previous week' });
-    optionRows.push({ id: 'date:manual', title: '📅 Enter manually' });
+        rows.push({
+            id: `week:${cursor.toFormat('yyyy-MM-dd')}`,
+            title: cap(label, 24),
+            description: `${cursor.toFormat('EEE d')} – ${weekEnd.toFormat('EEE d MMM')}`,
+        });
 
-    const sections: ListSection[] = [
-        { title: 'Available dates', rows: dateRows },
-        { title: 'Options', rows: optionRows },
-    ];
+        cursor = endOfWeek.plus({ days: 1 }); // jump to next Monday
+    }
 
-    await sendList(to, '📅 Which date would you like to book?', 'Select date', sections);
+    rows.push({ id: 'date:manual', title: '📅 Enter date manually' });
+
+    await sendList(to, '📅 Select a week:', 'Choose week', [{ title: 'Available weeks', rows }]);
+}
+
+// ─── Step 2 — Day picker within a week ───────────────────────────────────────
+
+/**
+ * Given the ISO start date of a week, sends a list of individual dates within
+ * that week (clamped to the booking window).  Max 7 rows — always fits.
+ */
+async function replyWithDayPicker(to: string, userId: string, weekStart: string): Promise<void> {
+    const today = DateTime.now().startOf('day');
+    const windowEnd = today.plus({ days: BOOKINGS_CONFIG.maxAdvanceDays });
+    const start = DateTime.fromISO(weekStart);
+    const endOfWeek = start.endOf('week').startOf('day'); // Sunday
+    const lastDay = endOfWeek <= windowEnd ? endOfWeek : windowEnd;
+
+    const rows: ListRow[] = [];
+    let cursor = start;
+
+    while (cursor <= lastDay) {
+        const isToday = cursor.hasSame(today, 'day');
+        const isTomorrow = cursor.hasSame(today.plus({ days: 1 }), 'day');
+        const label = isToday
+            ? `Today · ${cursor.toFormat('d MMM')}`
+            : isTomorrow
+              ? `Tomorrow · ${cursor.toFormat('d MMM')}`
+              : cursor.toFormat('EEE, d MMM');
+
+        rows.push({ id: `date:${cursor.toFormat('yyyy-MM-dd')}`, title: cap(label, 24) });
+        cursor = cursor.plus({ days: 1 });
+    }
+
+    await setSession(userId, { step: 'awaiting_date' });
+    await sendList(to, '📅 Select a date:', 'Choose date', [{ title: 'Select date', rows }]);
+}
+
+// ─── Step 3 — Time period picker ─────────────────────────────────────────────
+
+/**
+ * Once slots are fetched for a date, groups them into up to 4 named time
+ * periods and lets the user pick a band.  Empty periods are hidden.
+ */
+async function replyWithPeriodPicker(
+    to: string,
+    allSlots: string[],
+    dateLabel: string,
+): Promise<void> {
+    const rows: ListRow[] = TIME_PERIODS.map((p) => {
+        const count = allSlots.filter((iso) => {
+            const h = DateTime.fromISO(iso).hour;
+            return h >= p.start && h < p.end;
+        }).length;
+        return count > 0
+            ? ({
+                  id: `period:${p.key}`,
+                  title: cap(`${p.label} · ${p.range}`, 24),
+                  description: `${count} slot${count !== 1 ? 's' : ''} available`,
+              } as ListRow)
+            : null;
+    }).filter((r) => r !== null);
+
+    if (rows.length === 0) {
+        await sendText(to, 'No slots available. Please choose another date.');
+        return;
+    }
+
+    await sendList(to, `📅 *${dateLabel}*\n\nSelect a time period:`, 'Choose period', [
+        { title: 'Time periods', rows },
+    ]);
+}
+
+// ─── Step 4 — Slot picker for a period ───────────────────────────────────────
+
+/**
+ * Filters `allSlots` to those belonging to `periodKey` and renders them as a
+ * list.  Uses the global slot indices so `slot:N` IDs stay consistent with
+ * the full `availableSlots` array stored in the session.
+ */
+async function replyWithSlotsForPeriod(
+    from: string,
+    allSlots: string[],
+    periodKey: string,
+    dateLabel: string,
+): Promise<void> {
+    const period = TIME_PERIODS.find((p) => p.key === periodKey);
+    if (!period) {
+        await sendText(from, '⚠️ Unknown time period. Please try again.');
+        return;
+    }
+
+    const rows: ListRow[] = allSlots
+        .map((iso, idx) => {
+            const h = DateTime.fromISO(iso).hour;
+            return h >= period.start && h < period.end
+                ? { id: `slot:${idx}`, title: DateTime.fromISO(iso).toFormat('HH:mm') }
+                : null;
+        })
+        .filter((r): r is ListRow => r !== null);
+
+    if (rows.length === 0) {
+        await sendText(from, 'No slots in this period. Please choose another period.');
+        return;
+    }
+
+    await sendList(
+        from,
+        `📅 *${dateLabel}* · ${period.label} (${period.range})\n\nSelect a time:`,
+        'Choose time',
+        [{ title: 'Available times', rows }],
+    );
 }
 
 // ─── Main dispatcher ──────────────────────────────────────────────────────────
@@ -213,7 +334,7 @@ async function handleText(from: string, userId: string, text: string): Promise<v
             };
             await saveProfile(userId, profile);
             await sendText(from, "✅ Profile saved! Let's book your first session.");
-            await replyWithDatePicker(from, userId);
+            await replyWithWeekPicker(from, userId);
             break;
         }
 
@@ -330,41 +451,42 @@ async function handleText(from: string, userId: string, text: string): Promise<v
 // ─── Action handler ───────────────────────────────────────────────────────────
 
 async function handleAction(from: string, userId: string, actionId: string): Promise<void> {
-    // Date picker — specific date selected (date:yyyy-MM-dd)
+    // ── Step 1 → 2: week selected → show individual days ─────────────────────
+    if (/^week:\d{4}-\d{2}-\d{2}$/.test(actionId)) {
+        await replyWithDayPicker(from, userId, actionId.slice(5));
+        return;
+    }
+
+    // ── Step 2 → 3: date selected → fetch slots → show time periods ──────────
     if (/^date:\d{4}-\d{2}-\d{2}$/.test(actionId)) {
         const date = DateTime.fromFormat(actionId.slice(5), 'yyyy-MM-dd');
         await handleDateInput(from, userId, date.toFormat('dd/MM/yyyy'));
         return;
     }
 
-    // Slot selection — slot:<index>
-    if (/^slot:\d+$/.test(actionId)) {
-        await handleSlotSelected(from, userId, parseInt(actionId.slice(5), 10));
-        return;
-    }
-
-    // Slot pagination — slot:page:<pageIndex>
-    if (/^slot:page:\d+$/.test(actionId)) {
-        const page = parseInt(actionId.split(':')[2], 10);
+    // ── Step 3 → 4: period selected → show slots for that period ─────────────
+    if (/^period:(morning|afternoon|evening|night)$/.test(actionId)) {
+        const periodKey = actionId.slice(7) as PeriodKey;
         const session = await getSession(userId);
         if (!session?.availableSlots || !session?.selectedDate) {
             await sendText(from, '⚠️ Session expired. Type *hi* to start again.');
             return;
         }
-        const date = DateTime.fromFormat(session.selectedDate, 'yyyy-MM-dd');
-        await setSession(userId, { ...session, step: 'awaiting_slot', slotPage: page });
-        await replyWithSlotPicker(from, session.availableSlots, date.toFormat('dd MMM yyyy'), page);
+        const dateLabel = DateTime.fromISO(session.selectedDate).toFormat('dd MMM yyyy');
+        // Advance step so handleSlotSelected finds awaiting_slot
+        await setSession(userId, { ...session, step: 'awaiting_slot' });
+        await replyWithSlotsForPeriod(from, session.availableSlots, periodKey, dateLabel);
+        return;
+    }
+
+    // ── Step 4: slot selected ─────────────────────────────────────────────────
+    if (/^slot:\d+$/.test(actionId)) {
+        await handleSlotSelected(from, userId, parseInt(actionId.slice(5), 10));
         return;
     }
 
     switch (actionId) {
-        // ── Date picker navigation ────────────────────────────────────────────
-        case 'date:week:0':
-            await replyWithDatePicker(from, userId, 0);
-            break;
-        case 'date:week:1':
-            await replyWithDatePicker(from, userId, 1);
-            break;
+        // ── Manual date entry (watchlist escape hatch) ────────────────────────
         case 'date:manual':
             await setSession(userId, { step: 'awaiting_date' });
             await sendText(from, '📅 Enter a date (DD/MM/YYYY, e.g. 15/03/2026):');
@@ -397,12 +519,12 @@ async function handleAction(from: string, userId: string, actionId: string): Pro
             break;
         }
         case 'watchlist:no':
-            await replyWithDatePicker(from, userId);
+            await replyWithWeekPicker(from, userId);
             break;
 
         // ── Retry after no slots ──────────────────────────────────────────────
         case 'retry:date':
-            await replyWithDatePicker(from, userId);
+            await replyWithWeekPicker(from, userId);
             break;
 
         // ── Profile ───────────────────────────────────────────────────────────
@@ -467,7 +589,7 @@ async function handleStart(from: string, userId: string): Promise<void> {
         await setSession(userId, { step: 'onboarding_name' });
     } else {
         await sendText(from, `👋 Welcome back, *${profile.name}*!`);
-        await replyWithDatePicker(from, userId);
+        await replyWithWeekPicker(from, userId);
     }
 }
 
@@ -499,8 +621,8 @@ async function handleProfileCommand(from: string, userId: string): Promise<void>
 }
 
 async function handleDeleteCommand(from: string, userId: string): Promise<void> {
-    // Persist the step so confirm/cancel buttons remain meaningful after 30 min
-    await setSession(userId, { step: 'awaiting_date' });
+    // Persist a step so confirm/cancel buttons remain meaningful after 30 min
+    await setSession(userId, { step: 'awaiting_week' });
     const buttons: [ButtonOption, ButtonOption] = [
         { id: 'delete:confirm', title: '🗑 Delete everything' },
         { id: 'delete:cancel', title: '❌ Keep my data' },
@@ -621,62 +743,6 @@ async function handleInstantBookCommand(from: string, userId: string): Promise<v
 
 // ─── Date input helper ────────────────────────────────────────────────────────
 
-/**
- * WhatsApp list messages are capped at 10 rows total.
- * Layout per page:
- *   page 0, no more  → up to 10 slot rows
- *   page 0, has more → 9 slot rows + "View more →"
- *   page n≥1, has more → 8 slot rows + "← Previous" + "View more →"
- *   page n≥1, last    → up to 9 slot rows + "← Previous"
- */
-const SLOTS_PAGE0 = 9; // max slots on first page when more exist
-const SLOTS_PAGEN = 8; // max slots on subsequent pages (need 2 nav rows)
-
-function slotPageOffset(page: number): number {
-    return page === 0 ? 0 : SLOTS_PAGE0 + (page - 1) * SLOTS_PAGEN;
-}
-
-async function replyWithSlotPicker(
-    from: string,
-    allSlots: string[], // full list of ISO strings (already in session)
-    dateLabel: string,
-    page: number,
-): Promise<void> {
-    const offset = slotPageOffset(page);
-    const hasPrev = page > 0;
-    const slotsOnPage = page === 0 ? SLOTS_PAGE0 : SLOTS_PAGEN;
-    const pageSlots = allSlots.slice(offset, offset + slotsOnPage);
-    const hasMore = offset + slotsOnPage < allSlots.length;
-
-    // If this is the only page, we can safely show up to 10 slots with no nav rows.
-    const displaySlots = !hasPrev && !hasMore ? allSlots.slice(0, 10) : pageSlots;
-
-    const slotRows: ListRow[] = displaySlots.map((iso, i) => ({
-        id: `slot:${offset + i}`,
-        title: DateTime.fromISO(iso).toFormat('HH:mm'),
-    }));
-
-    const navRows: ListRow[] = [];
-    if (hasPrev) navRows.push({ id: `slot:page:${page - 1}`, title: '← Previous' });
-    if (hasMore) navRows.push({ id: `slot:page:${page + 1}`, title: 'View more →' });
-
-    const sections: ListSection[] = [{ title: 'Available times', rows: slotRows }];
-    if (navRows.length > 0) sections.push({ title: 'Navigation', rows: navRows });
-
-    const rangeEnd = offset + displaySlots.length;
-    const rangeLabel =
-        allSlots.length > (hasPrev || hasMore ? slotsOnPage : 10)
-            ? ` (${offset + 1}–${rangeEnd} of ${allSlots.length})`
-            : '';
-
-    await sendList(
-        from,
-        `📅 ${dateLabel} — ${allSlots.length} slot(s) available${rangeLabel}:\n\nSelect a time:`,
-        'Choose time',
-        sections,
-    );
-}
-
 async function handleDateInput(from: string, userId: string, text: string): Promise<void> {
     const date = DateTime.fromFormat(text, 'dd/MM/yyyy');
 
@@ -719,23 +785,22 @@ async function handleDateInput(from: string, userId: string, text: string): Prom
     }
 
     if (slots.length === 0) {
-        await setSession(userId, { step: 'awaiting_date' });
+        await setSession(userId, { step: 'awaiting_week' });
         const buttons: [ButtonOption] = [{ id: 'retry:date', title: '🔄 Try another date' }];
         await sendButtons(from, `No available slots on ${date.toFormat('dd MMM yyyy')}.`, buttons);
         return;
     }
 
-    // WhatsApp list rows are capped at 10 total — paginate via replyWithSlotPicker.
     const allSlotsISO = slots.map((s) => s.toISO()!);
+    const dateLabel = date.toFormat('dd MMM yyyy');
 
     await setSession(userId, {
-        step: 'awaiting_slot',
+        step: 'awaiting_period',
         selectedDate: date.toFormat('yyyy-MM-dd'),
         availableSlots: allSlotsISO,
-        slotPage: 0,
     });
 
-    await replyWithSlotPicker(from, allSlotsISO, date.toFormat('dd MMM yyyy'), 0);
+    await replyWithPeriodPicker(from, allSlotsISO, dateLabel);
 }
 
 // ─── Slot selection ───────────────────────────────────────────────────────────

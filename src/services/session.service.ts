@@ -24,8 +24,16 @@ const SK = 'SESSION';
 // onboarding_address    | onboardingName, onboardingEmail, onboardingPhone,
 //                       |   onboardingMembership
 // ──────────────────────┼──────────────────────────────────────────────────────
-// awaiting_date         | (selectedDate — set when a beyond-window date is
+// ── WhatsApp multi-step date/time picker ──────────────────────────────────────
+// awaiting_week         | Bot is showing the week-range picker.
+//                       | No extra fields needed.
+// awaiting_date         | Bot is showing the day picker for a selected week,
+//                       |   OR user is typing a manual date (DD/MM/YYYY).
+//                       | (selectedDate — set when a beyond-window date is
 //                       |   entered so the watchlist offer can reference it)
+// awaiting_period       | Slots were fetched; bot is showing the 4-bucket time
+//                       |   period picker.
+//                       | selectedDate, availableSlots
 // awaiting_slot         | selectedDate, availableSlots, slotPage
 // awaiting_watchlist_time| selectedDate
 // confirming            | selectedDate, selectedSlot
