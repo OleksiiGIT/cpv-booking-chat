@@ -52,13 +52,26 @@ function cap(str: string, max: number): string {
     return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
+/**
+ * Returns a compact date-range label for a week row/button.
+ *   same month : "11–15 Mar"
+ *   cross-month: "28 Mar–3 Apr"
+ *   single day : "15 Mar"
+ */
+function weekRangeLabel(start: DateTime, end: DateTime): string {
+    if (start.hasSame(end, 'day')) return start.toFormat('d MMM');
+    return start.month === end.month
+        ? `${start.toFormat('d')}–${end.toFormat('d MMM')}`
+        : `${start.toFormat('d MMM')}–${end.toFormat('d MMM')}`;
+}
+
 // ─── Time period definitions ──────────────────────────────────────────────────
 
 const TIME_PERIODS = [
-    { key: 'morning', label: 'Morning', range: '06:00–12:00', start: 6, end: 12 },
-    { key: 'afternoon', label: 'Afternoon', range: '12:00–17:00', start: 12, end: 17 },
-    { key: 'evening', label: 'Evening', range: '17:00–21:00', start: 17, end: 21 },
-    { key: 'night', label: 'Night', range: '21:00–22:00', start: 21, end: 22 },
+    { key: 'morning', label: 'Morning', range: '06:00–11:00', start: 6, end: 11 },
+    { key: 'afternoon', label: 'Afternoon', range: '11:00–16:00', start: 11, end: 16 },
+    { key: 'evening', label: 'Evening', range: '16:00–21:00', start: 16, end: 21 },
+    { key: 'night', label: 'Night', range: '21:00–24:00', start: 21, end: 24 },
 ] as const;
 
 type PeriodKey = (typeof TIME_PERIODS)[number]['key'];
@@ -66,62 +79,86 @@ type PeriodKey = (typeof TIME_PERIODS)[number]['key'];
 // ─── Step 1 — Week picker ─────────────────────────────────────────────────────
 
 /**
- * Sends a list of ISO week ranges (Mon–Sun) that fall within the 14-day
- * booking window.  The first row always starts from *today* (not the
- * preceding Monday).  Each week occupies one row, so we stay well under the
- * 10-row hard cap.  A "Enter date manually" row is appended for watchlist use.
+ * Shows the current week and next week as native WhatsApp reply buttons
+ * (max 3 allowed), plus a "More weeks →" button that opens a list of the
+ * remaining 9 weeks (weeks 2–10 after the current one).
+ *
+ * The picker is NOT bounded by the 14-day booking window: users can browse
+ * any week and the watchlist offer is made when they pick an out-of-window date.
  */
 async function replyWithWeekPicker(to: string, userId: string): Promise<void> {
     await setSession(userId, { step: 'awaiting_week' });
 
     const today = DateTime.now().startOf('day');
-    const windowEnd = today.plus({ days: BOOKINGS_CONFIG.maxAdvanceDays });
+    const thisWeekEnd = today.endOf('week').startOf('day'); // this Sunday
+    const nextWeekStart = thisWeekEnd.plus({ days: 1 }); // next Monday
+    const nextWeekEnd = nextWeekStart.endOf('week').startOf('day'); // next Sunday
+
+    const thisLabel = weekRangeLabel(today, thisWeekEnd);
+    const nextLabel = weekRangeLabel(nextWeekStart, nextWeekEnd);
+
+    await sendButtons(
+        to,
+        `📅 Select a week to book:\n\nThis week:  ${thisLabel}\nNext week:  ${nextLabel}`,
+        [
+            { id: `week:${today.toFormat('yyyy-MM-dd')}`, title: 'This week' },
+            { id: `week:${nextWeekStart.toFormat('yyyy-MM-dd')}`, title: 'Next week' },
+            { id: 'week:more', title: 'More weeks →' },
+        ],
+    );
+}
+
+/**
+ * Shows weeks 2–10 (the 9 weeks after "next week") as a list.
+ * Rows: 9 week entries + "Enter date manually" = 10 rows (exactly at the cap).
+ */
+async function replyWithMoreWeeks(to: string): Promise<void> {
+    const today = DateTime.now().startOf('day');
+
+    // Start at the Monday of week 2 (skip current week and next week)
+    let cursor = today
+        .endOf('week') // this Sunday (end-of-day)
+        .plus({ days: 1 }) // next Monday
+        .endOf('week') // next Sunday (end-of-day)
+        .plus({ days: 1 }) // Monday of week 2
+        .startOf('day');
 
     const rows: ListRow[] = [];
-    let cursor = today;
 
-    while (cursor <= windowEnd) {
-        // end of the ISO week containing `cursor` (always a Sunday)
-        const endOfWeek = cursor.endOf('week').startOf('day');
-        const weekEnd = endOfWeek <= windowEnd ? endOfWeek : windowEnd;
-
-        // Row title: "11–15 Mar" (same month) or "28 Mar–3 Apr" (cross-month)
-        const label =
-            cursor.month === weekEnd.month
-                ? `${cursor.toFormat('d')}–${weekEnd.toFormat('d MMM')}`
-                : `${cursor.toFormat('d MMM')}–${weekEnd.toFormat('d MMM')}`;
-
+    for (let i = 0; i < 9; i++) {
+        const weekEnd = cursor.endOf('week').startOf('day');
         rows.push({
             id: `week:${cursor.toFormat('yyyy-MM-dd')}`,
-            title: cap(label, 24),
-            description: `${cursor.toFormat('EEE d')} – ${weekEnd.toFormat('EEE d MMM')}`,
+            title: cap(weekRangeLabel(cursor, weekEnd), 24),
         });
-
-        cursor = endOfWeek.plus({ days: 1 }); // jump to next Monday
+        cursor = weekEnd.plus({ days: 1 }); // advance to next Monday
     }
 
     rows.push({ id: 'date:manual', title: '📅 Enter date manually' });
 
-    await sendList(to, '📅 Select a week:', 'Choose week', [{ title: 'Available weeks', rows }]);
+    await sendList(to, '📅 Select a week:', 'Choose week', [{ title: 'More weeks', rows }]);
 }
 
 // ─── Step 2 — Day picker within a week ───────────────────────────────────────
 
 /**
- * Given the ISO start date of a week, sends a list of individual dates within
- * that week (clamped to the booking window).  Max 7 rows — always fits.
+ * Given the ISO start date of a week, sends a list of all days within that
+ * week from today onwards (no booking-window cap — users can pick any future
+ * date and will be offered the watchlist if it's beyond the 14-day window).
+ * Max 7 rows — always fits under the 10-row limit.
  */
 async function replyWithDayPicker(to: string, userId: string, weekStart: string): Promise<void> {
     const today = DateTime.now().startOf('day');
-    const windowEnd = today.plus({ days: BOOKINGS_CONFIG.maxAdvanceDays });
     const start = DateTime.fromISO(weekStart);
     const endOfWeek = start.endOf('week').startOf('day'); // Sunday
-    const lastDay = endOfWeek <= windowEnd ? endOfWeek : windowEnd;
+
+    // For the current week skip days that are already in the past
+    const firstDay = start < today ? today : start;
 
     const rows: ListRow[] = [];
-    let cursor = start;
+    let cursor = firstDay;
 
-    while (cursor <= lastDay) {
+    while (cursor <= endOfWeek) {
         const isToday = cursor.hasSame(today, 'day');
         const isTomorrow = cursor.hasSame(today.plus({ days: 1 }), 'day');
         const label = isToday
@@ -132,6 +169,13 @@ async function replyWithDayPicker(to: string, userId: string, weekStart: string)
 
         rows.push({ id: `date:${cursor.toFormat('yyyy-MM-dd')}`, title: cap(label, 24) });
         cursor = cursor.plus({ days: 1 });
+    }
+
+    if (rows.length === 0) {
+        // Entire week is in the past (edge case: stale session)
+        await sendText(to, '⚠️ No upcoming days in this week. Please choose another week.');
+        await replyWithWeekPicker(to, userId);
+        return;
     }
 
     await setSession(userId, { step: 'awaiting_date' });
@@ -173,12 +217,24 @@ async function replyWithPeriodPicker(
     ]);
 }
 
-// ─── Step 4 — Slot picker for a period ───────────────────────────────────────
+// ─── Step 4 — Slot picker for a period (with pagination) ─────────────────────
 
 /**
+ * WhatsApp list messages are hard-capped at 10 rows across ALL sections.
+ *
+ * Morning (06:00–12:00) can have up to 12 thirty-minute slots — more than the
+ * cap.  We paginate within the period:
+ *
+ *   page 0, single page  (≤ 10 slots) → up to 10 slot rows, no nav
+ *   page 0, has more     (> 10 slots) → 9 slot rows + "More times →"
+ // ─── Step 4 — Slot picker for a period ───────────────────────────────────────
+
+ /**
  * Filters `allSlots` to those belonging to `periodKey` and renders them as a
- * list.  Uses the global slot indices so `slot:N` IDs stay consistent with
- * the full `availableSlots` array stored in the session.
+ * single list.  Period boundaries are sized so that each period contains at
+ * most 10 thirty-minute slots, staying within the Meta API 10-row hard cap.
+ * Global slot indices are used for `slot:N` IDs so `handleSlotSelected` can
+ * always locate the right entry in `session.availableSlots`.
  */
 async function replyWithSlotsForPeriod(
     from: string,
@@ -473,7 +529,6 @@ async function handleAction(from: string, userId: string, actionId: string): Pro
             return;
         }
         const dateLabel = DateTime.fromISO(session.selectedDate).toFormat('dd MMM yyyy');
-        // Advance step so handleSlotSelected finds awaiting_slot
         await setSession(userId, { ...session, step: 'awaiting_slot' });
         await replyWithSlotsForPeriod(from, session.availableSlots, periodKey, dateLabel);
         return;
@@ -486,6 +541,11 @@ async function handleAction(from: string, userId: string, actionId: string): Pro
     }
 
     switch (actionId) {
+        // ── More weeks list ───────────────────────────────────────────────────
+        case 'week:more':
+            await replyWithMoreWeeks(from);
+            break;
+
         // ── Manual date entry (watchlist escape hatch) ────────────────────────
         case 'date:manual':
             await setSession(userId, { step: 'awaiting_date' });

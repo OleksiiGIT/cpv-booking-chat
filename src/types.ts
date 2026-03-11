@@ -259,7 +259,6 @@ export type ConversationSession = {
     /** Booking flow */
     selectedDate?: string; // 'yyyy-MM-dd'
     availableSlots?: string[]; // ISO datetime strings fetched for selectedDate
-    slotPage?: number; // current page index shown in the slot picker
     selectedSlot?: string; // ISO datetime string chosen by the user
     /** Instant booking flow — HH:mm times requested, persisted for the watchlist-offer step */
     instantBookTimes?: string[];
