@@ -222,6 +222,18 @@ export type BookingRecord = {
     createdAt: string; // ISO datetime
 };
 
+export type InstantBookingResultStatus = 'booked' | 'unavailable' | 'failed';
+
+export interface InstantBookingResult {
+    /** The requested time in HH:mm format */
+    time: string;
+    status: InstantBookingResultStatus;
+    /** Set when status === 'booked' */
+    appointmentId?: string;
+    /** Set when status === 'failed' */
+    error?: string;
+}
+
 export type ConversationStep =
     | 'onboarding_name'
     | 'onboarding_email'
@@ -231,6 +243,7 @@ export type ConversationStep =
     | 'awaiting_date'
     | 'awaiting_slot'
     | 'awaiting_watchlist_time'
+    | 'instant_book'
     | 'confirming'
     | 'done';
 
@@ -246,4 +259,6 @@ export type ConversationSession = {
     availableSlots?: string[]; // ISO datetime strings fetched for selectedDate
     slotPage?: number; // current page index shown in the slot picker
     selectedSlot?: string; // ISO datetime string chosen by the user
+    /** Instant booking flow — HH:mm times requested, persisted for the watchlist-offer step */
+    instantBookTimes?: string[];
 };

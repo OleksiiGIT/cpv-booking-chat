@@ -8,6 +8,43 @@ const TTL_SECONDS = 30 * 60;
 const pk = (userId: string) => `session#${userId}`;
 const SK = 'SESSION';
 
+// ─── Session schema reference ─────────────────────────────────────────────────
+//
+// Every active session stored in DynamoDB looks like:
+//
+//   PK  "session#<userId>"   SK  "SESSION"   ttl  <unix epoch + 30 min>
+//   { step, ...stepFields }
+//
+// Step                  | Populated fields
+// ──────────────────────┼──────────────────────────────────────────────────────
+// onboarding_name       | —
+// onboarding_email      | onboardingName
+// onboarding_phone      | onboardingName, onboardingEmail
+// onboarding_membership | onboardingName, onboardingEmail, onboardingPhone
+// onboarding_address    | onboardingName, onboardingEmail, onboardingPhone,
+//                       |   onboardingMembership
+// ──────────────────────┼──────────────────────────────────────────────────────
+// awaiting_date         | (selectedDate — set when a beyond-window date is
+//                       |   entered so the watchlist offer can reference it)
+// awaiting_slot         | selectedDate, availableSlots, slotPage
+// awaiting_watchlist_time| selectedDate
+// confirming            | selectedDate, selectedSlot
+// ──────────────────────┼──────────────────────────────────────────────────────
+// instant_book          | Bot is waiting for a single free-text message in the
+//                       | form "DD/MM/YYYY HH:mm[, HH:mm …]".
+//                       |
+//                       | Sub-states within this step:
+//                       |   • Awaiting input   → { step: 'instant_book' }
+//                       |   • Beyond-window    → { step: 'instant_book',
+//                       |       selectedDate, instantBookTimes }
+//                       |     The bot has shown a watchlist-offer prompt and is
+//                       |     waiting for the user to confirm or reject it.
+//                       |     instantBookTimes holds the HH:mm strings to add.
+// ──────────────────────┼──────────────────────────────────────────────────────
+// done                  | (terminal — cleared immediately after use)
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Returns the active conversation session for a user, or `null` if none exists
  * (expired or never started).

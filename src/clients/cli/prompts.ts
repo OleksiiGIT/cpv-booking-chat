@@ -1,9 +1,50 @@
 import promptSync from 'prompt-sync';
 import { DateTime } from 'luxon';
-import { UserProfile } from '../../types';
+import { InstantBookingResult, UserProfile } from '../../types';
 import { BOOKINGS_CONFIG } from '../../config/bookings.config';
+import { parseInstantBookingInput } from '../../utils/date.utils';
 
 const prompt = promptSync();
+
+export function promptMainMenu(): 'book' | 'instantbook' {
+    console.log('\n📅 How would you like to book?');
+    console.log('   (1) Step-by-step');
+    console.log('   (2) Instant book  (e.g. 01/04/2026 14:00, 15:00)');
+    const input = prompt('Select (1 or 2): ').trim();
+    return input === '2' ? 'instantbook' : 'book';
+}
+
+/**
+ * Prompts for a free-text instant-booking string and retries until the input is
+ * valid or the user submits an empty line (returns null → caller should exit).
+ */
+export function promptInstantBook(): { date: string; times: string[] } | null {
+    for (;;) {
+        const raw = prompt('Enter date and times (e.g. 01/04/2026 14:00, 15:00): ');
+        if (raw === null || raw.trim() === '') return null;
+        try {
+            return parseInstantBookingInput(raw.trim());
+        } catch (err) {
+            console.error(`\n⚠️  ${(err as Error).message}\n`);
+        }
+    }
+}
+
+/** Prints a per-slot summary table for instant-booking results. */
+export function printInstantBookSummary(date: string, results: InstantBookingResult[]): void {
+    const dateLabel = DateTime.fromISO(date).toFormat('dd MMM yyyy');
+    console.log(`\n📋 Booking results for ${dateLabel}:\n`);
+    for (const r of results) {
+        if (r.status === 'booked') {
+            console.log(`  ✅  ${r.time}  →  booked        ID: ${r.appointmentId}`);
+        } else if (r.status === 'unavailable') {
+            console.log(`  ⚠️   ${r.time}  →  unavailable`);
+        } else {
+            console.log(`  ❌  ${r.time}  →  failed        ${r.error ?? ''}`);
+        }
+    }
+    console.log('');
+}
 
 export function promptOnboarding(): UserProfile {
     console.log('\n👋 Welcome! Please set up your profile first.\n');

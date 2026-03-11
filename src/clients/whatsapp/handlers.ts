@@ -13,16 +13,16 @@ import { DateTime } from 'luxon';
 import { clearSession, getSession, setSession } from '../../services/session.service';
 import { deleteProfile, getProfile, saveProfile } from '../../services/user.service';
 import { addToWatchlist, clearWatchlist } from '../../services/watchlist.service';
-import { createAppointment, getAvailableSlots } from '../../services/booking.service';
+import { createAppointment, getAvailableSlots, instantBook } from '../../services/booking.service';
 import {
     clearBookingRecords,
     getUserBookingRecords,
     saveBookingRecord,
 } from '../../services/booking-record.service';
 import { profileToCustomer } from '../../services/profile.service';
-import { ConversationSession, UserProfile } from '../../types';
+import { ConversationSession, InstantBookingResult, UserProfile } from '../../types';
 import { BOOKINGS_CONFIG } from '../../config/bookings.config';
-import { isDateBeyondWindow } from '../../utils/date.utils';
+import { isDateBeyondWindow, parseInstantBookingInput } from '../../utils/date.utils';
 import { ButtonOption, ListRow, ListSection, sendButtons, sendList, sendText } from './bot';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,6 +152,10 @@ async function handleText(from: string, userId: string, text: string): Promise<v
         await handleHelp(from);
         return;
     }
+    if (lower === 'instantbook' || lower === 'instant book') {
+        await handleInstantBookCommand(from, userId);
+        return;
+    }
 
     const session = await getSession(userId);
 
@@ -229,6 +233,92 @@ async function handleText(from: string, userId: string, text: string): Promise<v
                 from,
                 `✅ Added to watchlist!\n\n📅 ${session.selectedDate} at *${text}*\n\nI'll auto-book it as soon as it enters the 2-week booking window.`,
             );
+            break;
+        }
+
+        // ── Instant booking ───────────────────────────────────────────────────
+        case 'instant_book': {
+            let parsed: { date: string; times: string[] };
+            try {
+                parsed = parseInstantBookingInput(text);
+            } catch (err) {
+                await sendText(
+                    from,
+                    `⚠️ ${(err as Error).message}\n\nPlease try again or type *cancel* to stop.`,
+                );
+                break; // stay in instant_book step
+            }
+
+            const date = DateTime.fromISO(parsed.date);
+
+            // Date is outside the booking window — offer watchlist for all times
+            if (isDateBeyondWindow(date)) {
+                await setSession(userId, {
+                    step: 'instant_book',
+                    selectedDate: parsed.date,
+                    instantBookTimes: parsed.times,
+                });
+                const buttons: [ButtonOption, ButtonOption] = [
+                    { id: 'instantbook:watchlist:yes', title: '📋 Add all to watchlist' },
+                    { id: 'instantbook:watchlist:no', title: '❌ Enter different date' },
+                ];
+                await sendButtons(
+                    from,
+                    `⚠️ ${date.toFormat('dd MMM yyyy')} is more than ${BOOKINGS_CONFIG.maxAdvanceDays} days away.\n\nAdd ${parsed.times.join(', ')} to your watchlist instead?`,
+                    buttons,
+                );
+                break;
+            }
+
+            // Within window — book all requested slots
+            const profile = await getProfile(userId);
+            if (!profile) {
+                await sendText(from, 'Profile not found. Type *hi* to set up your profile.');
+                break;
+            }
+
+            await sendText(
+                from,
+                `⏳ Booking ${parsed.times.length} slot(s) on ${date.toFormat('dd MMM yyyy')}…`,
+            );
+
+            let results: InstantBookingResult[];
+            try {
+                results = await instantBook(parsed.date, parsed.times, profileToCustomer(profile));
+            } catch (err) {
+                console.error('[WhatsAppBot] instantBook error:', err);
+                await sendText(from, '⚠️ Could not complete bookings. Please try again later.');
+                break;
+            }
+
+            await clearSession(userId);
+            await sendText(from, formatInstantBookSummary(parsed.date, results));
+
+            // Persist booking records — a DynamoDB failure must never hide a successful booking
+            for (const r of results.filter((r) => r.status === 'booked')) {
+                const [, m] = r.time.split(':').map(Number);
+                const startDt = DateTime.fromISO(`${parsed.date}T${r.time}:00`);
+                const endDt = startDt.plus({
+                    minutes: BOOKINGS_CONFIG.appointmentDurationMinutes,
+                });
+                const staffIdx = BOOKINGS_CONFIG.staffIndexByMinute[m] ?? 2;
+                const courtLabel =
+                    staffIdx === 1 ? 'Court 1' : staffIdx === 2 ? 'Court 2' : 'Court';
+                try {
+                    await saveBookingRecord(userId, {
+                        appointmentId: r.appointmentId!,
+                        startTime: startDt.toISO()!,
+                        endTime: endDt.toISO()!,
+                        court: courtLabel,
+                        createdAt: DateTime.now().toISO()!,
+                    });
+                } catch (saveErr) {
+                    console.error(
+                        '[WhatsAppBot] saveBookingRecord failed for instant book:',
+                        saveErr,
+                    );
+                }
+            }
             break;
         }
 
@@ -335,6 +425,31 @@ async function handleAction(from: string, userId: string, actionId: string): Pro
             await sendText(from, '✅ Cancelled. Your data is safe.');
             break;
 
+        // ── Instant booking — watchlist offer for out-of-window dates ─────────
+        case 'instantbook:watchlist:yes': {
+            const session = await getSession(userId);
+            if (!session?.selectedDate || !session?.instantBookTimes?.length) {
+                await sendText(from, '⚠️ Session expired. Type *instantbook* to begin again.');
+                break;
+            }
+            for (const time of session.instantBookTimes) {
+                await addToWatchlist(userId, session.selectedDate, time);
+            }
+            await clearSession(userId);
+            await sendText(
+                from,
+                `✅ Added to watchlist!\n\n📅 *${session.selectedDate}* at *${session.instantBookTimes.join(', ')}*\n\nI'll auto-book as soon as they enter the 2-week booking window.`,
+            );
+            break;
+        }
+        case 'instantbook:watchlist:no':
+            await setSession(userId, { step: 'instant_book' });
+            await sendText(
+                from,
+                '📅 Send a new date and times:\nDD/MM/YYYY HH:mm[, HH:mm …]\n\nExample: 01/04/2026 14:00, 15:00',
+            );
+            break;
+
         default:
             await sendText(from, 'Unknown action. Type *hi* to continue.');
     }
@@ -434,6 +549,7 @@ async function handleHelp(from: string): Promise<void> {
             '',
             '📅 *Booking*',
             '*hi* — pick a date and book a court',
+            '*instantbook* — book one or more slots in a single message',
             '*bookings* — view your upcoming bookings',
             '*cancel* — cancel the current flow',
             '',
@@ -444,6 +560,42 @@ async function handleHelp(from: string): Promise<void> {
             '❓ *Help*',
             '*help* — show this message',
         ].join('\n'),
+    );
+}
+
+// ─── Instant booking helpers ──────────────────────────────────────────────────
+
+/** Formats an InstantBookingResult[] into a plain-text summary for WhatsApp. */
+function formatInstantBookSummary(date: string, results: InstantBookingResult[]): string {
+    const dateLabel = DateTime.fromISO(date).toFormat('dd MMM yyyy');
+    const lines = [`📋 *Instant Booking — ${dateLabel}*`, ''];
+
+    for (const r of results) {
+        if (r.status === 'booked') {
+            lines.push(`✅  *${r.time}*  →  booked`);
+            lines.push(`      🔖 ${r.appointmentId}`);
+        } else if (r.status === 'unavailable') {
+            lines.push(`⚠️  *${r.time}*  →  unavailable`);
+        } else {
+            lines.push(`❌  *${r.time}*  →  failed`);
+            if (r.error) lines.push(`      ${r.error}`);
+        }
+    }
+
+    return lines.join('\n');
+}
+
+async function handleInstantBookCommand(from: string, userId: string): Promise<void> {
+    const profile = await getProfile(userId);
+    if (!profile) {
+        await sendText(from, 'No profile found. Type *hi* to set one up first.');
+        return;
+    }
+
+    await setSession(userId, { step: 'instant_book' });
+    await sendText(
+        from,
+        '⚡ *Instant Booking*\n\nSend the date and times you want to book:\nDD/MM/YYYY HH:mm[, HH:mm …]\n\nExample: 01/04/2026 14:00, 15:00',
     );
 }
 

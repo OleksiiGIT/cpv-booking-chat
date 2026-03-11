@@ -337,7 +337,69 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [x] Add `dev:whatsapp` script to `package.json` (local server on port 3001, expose via ngrok)
 - [x] Register webhook URL with Meta Developer Console after `cdk deploy`
 
-### Phase 6 — Advance Booking Watchlist (bots)
+### Phase 6 — Instant Booking
+
+Allow a user to provide a date and one or more times in a single free-text message
+(e.g. `01/04/2026 14:00, 15:00`) and have all requested slots booked in one shot.
+If a slot is unavailable it is skipped and the user is informed; all other slots are
+still attempted.
+
+#### Input format
+
+```
+DD/MM/YYYY HH:mm[, HH:mm[, HH:mm …]]
+```
+
+Examples:
+
+- `01/04/2026 14:00`
+- `01/04/2026 14:00, 15:00`
+- `01/04/2026 09:00, 10:00, 11:00`
+
+#### Tasks
+
+- [x] Add `parseInstantBookingInput(raw: string): { date: string; times: string[] }` to
+  `src/utils/date.utils.ts` — validates and splits the free-text string; throws a
+  descriptive error on bad format
+- [x] Add `instantBook(date: string, times: string[], customer: AppointmentCustomer): Promise<InstantBookingResult[]>`
+  to `src/services/booking.service.ts`
+    - For each requested time, call `getAvailableSlots(date)` once and cache the result
+    - For each time in `times`:
+        - If the time is **not** in the available slots → record as `{ time, status: "unavailable" }`
+        - If available → call `createAppointment(slot, customer)` → record as
+          `{ time, status: "booked", appointmentId }` on success or
+          `{ time, status: "failed", error }` on API error
+    - Return the full `InstantBookingResult[]` array so the caller can report per-slot outcomes
+- [x] Add `InstantBookingResult` type to `src/types.ts`:
+  ```typescript
+  export type InstantBookingResultStatus = "booked" | "unavailable" | "failed";
+  export interface InstantBookingResult {
+    time: string;
+    status: InstantBookingResultStatus;
+    appointmentId?: string;
+    error?: string;
+  }
+  ```
+- [x] **CLI** — add an "Instant book" option in `src/clients/cli/prompts.ts`:
+    - Prompt: `Enter date and times (e.g. 01/04/2026 14:00, 15:00):`
+    - Call `parseInstantBookingInput`, then `instantBook`
+    - Print a per-slot summary table (✅ booked / ⚠️ unavailable / ❌ failed)
+- [x] **Telegram** — add `/instantbook` command in `src/clients/telegram/handlers.ts`:
+    - Bot asks: _"Send the date and times you want to book, e.g. `01/04/2026 14:00, 15:00`"_
+    - On reply: parse → instant-book → send a per-slot result message
+    - If the requested date is beyond the 2-week window, inform the user and offer the
+      watchlist for each requested time instead
+- [x] **WhatsApp** — mirror the same flow in `src/clients/whatsapp/handlers.ts` with an
+  equivalent free-text prompt
+- [ ] Add `INSTANT_BOOK` session step to the session schema in `src/services/session.service.ts`
+  so the bot knows it is waiting for a free-text date/time string
+- [ ] Input validation & error messages:
+    - Unrecognised format → explain correct format and ask again (do not crash)
+    - Past date → reject with a clear message
+    - All slots unavailable → inform the user; do not create any appointments
+    - Partial success (some booked, some unavailable) → clearly list each outcome
+
+### Phase 7 — Advance Booking Watchlist (bots)
 
 - [ ] Extend `src/services/watchlist.service.ts` with `addToWatchlist`, `getWatchlist`, `removeFromWatchlist`
 - [ ] Write `src/lambda/watchlist.handler.ts` — hourly EventBridge-triggered poller
@@ -353,13 +415,13 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] `cdk deploy`
 - [ ] Register WhatsApp webhook in Meta Developer Console
 
-### Phase 7 — Hardening
+### Phase 8 — Hardening
 
 - [ ] Add CloudWatch alarms for Lambda errors and DynamoDB throttles
 - [ ] Add input validation for date and slot selection across all clients
 - [ ] Handle edge cases: no slots available, booking conflict, API timeout, watchlist slot missed
 
-### Phase 8 — Booking Cancellation
+### Phase 9 — Booking Cancellation
 
 - [ ] Add `cancelAppointment(appointmentId)` to `BookingService` — calls Microsoft Bookings API to cancel
 - [ ] Store `appointmentId` (returned by `createAppointment`) in DynamoDB on the booking record so it can be referenced
@@ -371,7 +433,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Send a cancellation confirmation message to the user after successful cancellation
 - [ ] Mark the booking record status as `"cancelled"` in DynamoDB; do not delete (history / audit trail)
 
-### Phase 9 — Opponent Details in Booking
+### Phase 10 — Opponent Details in Booking
 
 - [ ] Extend the conversation flow in both CLI and Telegram: after slot confirmation, ask for the **opponent's name**
   and
@@ -382,7 +444,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
   string** — Outlook does not support later changes to this field. Opponent identity is managed exclusively in DynamoDB.
 - [ ] Include opponent details in booking confirmation messages sent to the booking person
 
-### Phase 10 — Notifications for Booking Person & Opponent
+### Phase 11 — Notifications for Booking Person & Opponent
 
 - [ ] Create `src/services/notification.service.ts` — central hub for dispatching notifications across channels
   (Telegram message, WhatsApp template, SES email)
@@ -394,7 +456,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
   missed watchlist entries
 - [ ] Add `src/lambda/notification.handler.ts` if async fan-out via SQS/SNS is needed at scale
 
-### Phase 11 — Contact Preferences & Notification Settings
+### Phase 12 — Contact Preferences & Notification Settings
 
 - [ ] Extend the user profile DynamoDB schema with a `contactPreferences` object:
   ```typescript
@@ -411,7 +473,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Update the onboarding flow to ask the user for their notification preference (default: `true`) and record explicit
   consent
 
-### Phase 12 — Calendar Integration
+### Phase 13 — Calendar Integration
 
 - [ ] Extend the user profile DynamoDB schema with a `calendarIntegration` object:
   ```typescript
@@ -432,7 +494,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Store OAuth 2.0 tokens per user in DynamoDB (encrypted) or Secrets Manager; handle token refresh
 - [ ] Add calendar-integration CDK resources: Lambda environment variables, IAM roles for Secrets Manager access
 
-### Phase 13 — Opponent Change
+### Phase 14 — Opponent Change
 
 - [ ] Add `/change-opponent` command to the Telegram bot — allows the booking creator to update the opponent on an
   existing booking
@@ -441,7 +503,7 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 - [ ] Update `opponentName` and `opponentEmail` on the DynamoDB booking record only
 - [ ] ⚠️ **Outlook constraint:** do **NOT** call the Microsoft Bookings API to update the appointment — Outlook does not
   support editing attendee details after creation. The `opponentName` sent to the API at booking time is always empty
-  (see Phase 10).
+  (see Phase 11).
 - [ ] Notify the **new opponent** (email via SES) with the booking details
 - [ ] Notify the **old opponent** (if a previous email was stored) that they have been removed from the booking
 - [ ] Send a confirmation to the booking person that the opponent has been successfully updated
@@ -450,17 +512,18 @@ new Schedule(this, 'WatchlistSchedule', {schedule: Schedule.rate(Duration.hours(
 
 ## 10. Key Dependencies to Add
 
-| Package                           | Phase   | Purpose                                                  |
-|-----------------------------------|---------|----------------------------------------------------------|
-| `telegraf`                        | 3 (MVP) | Telegram bot framework                                   |
-| `@aws-sdk/client-dynamodb`        | 3 (MVP) | DynamoDB for sessions, user profiles, watchlist          |
-| `@aws-sdk/lib-dynamodb`           | 3 (MVP) | DynamoDB document client (easier API)                    |
-| `aws-cdk-lib`                     | 4 (MVP) | Infrastructure as Code — CDK stack                       |
-| `constructs`                      | 4 (MVP) | CDK constructs peer dependency                           |
-| `@aws-sdk/client-secrets-manager` | 4 (MVP) | Read OWA cookie, canary token, and bot tokens at runtime |
-| `aws-lambda`                      | 4 (MVP) | Lambda handler types                                     |
-| `@types/aws-lambda`               | 4 (MVP) | TypeScript types for Lambda                              |
-| `whatsapp-cloud-api` / `twilio`   | 5       | WhatsApp messaging provider                              |
-| `@aws-sdk/client-ses`             | 11      | Send email notifications to booking person and opponent  |
-| `ics`                             | 13      | Generate `.ics` (iCalendar) files for calendar invites   |
-| `googleapis`                      | 13      | Google Calendar API — create/delete events via OAuth 2.0 |
+| Package                           | Phase   | Purpose                                                         |
+|-----------------------------------|---------|-----------------------------------------------------------------|
+| `telegraf`                        | 3 (MVP) | Telegram bot framework                                          |
+| `@aws-sdk/client-dynamodb`        | 3 (MVP) | DynamoDB for sessions, user profiles, watchlist                 |
+| `@aws-sdk/lib-dynamodb`           | 3 (MVP) | DynamoDB document client (easier API)                           |
+| `aws-cdk-lib`                     | 4 (MVP) | Infrastructure as Code — CDK stack                              |
+| `constructs`                      | 4 (MVP) | CDK constructs peer dependency                                  |
+| `@aws-sdk/client-secrets-manager` | 4 (MVP) | Read OWA cookie, canary token, and bot tokens at runtime        |
+| `aws-lambda`                      | 4 (MVP) | Lambda handler types                                            |
+| `@types/aws-lambda`               | 4 (MVP) | TypeScript types for Lambda                                     |
+| `whatsapp-cloud-api` / `twilio`   | 5       | WhatsApp messaging provider                                     |
+| `date-fns`                        | 6       | Parse & validate free-text date/time strings (DD/MM/YYYY HH:mm) |
+| `@aws-sdk/client-ses`             | 12      | Send email notifications to booking person and opponent         |
+| `ics`                             | 14      | Generate `.ics` (iCalendar) files for calendar invites          |
+| `googleapis`                      | 14      | Google Calendar API — create/delete events via OAuth 2.0        |

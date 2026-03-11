@@ -4,16 +4,16 @@ import { DateTime } from 'luxon';
 import { clearSession, getSession, setSession } from '../../services/session.service';
 import { deleteProfile, getProfile, saveProfile } from '../../services/user.service';
 import { addToWatchlist, clearWatchlist } from '../../services/watchlist.service';
-import { createAppointment, getAvailableSlots } from '../../services/booking.service';
+import { createAppointment, getAvailableSlots, instantBook } from '../../services/booking.service';
 import {
     clearBookingRecords,
     getUserBookingRecords,
     saveBookingRecord,
 } from '../../services/booking-record.service';
 import { profileToCustomer } from '../../services/profile.service';
-import { ConversationSession, UserProfile } from '../../types';
+import { ConversationSession, InstantBookingResult, UserProfile } from '../../types';
 import { BOOKINGS_CONFIG } from '../../config/bookings.config';
-import { isDateBeyondWindow } from '../../utils/date.utils';
+import { isDateBeyondWindow, parseInstantBookingInput } from '../../utils/date.utils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +134,7 @@ export async function handleHelp(ctx: Context): Promise<void> {
             '',
             '📅 *Booking*',
             '/start — pick a date and book a court',
+            '/instantbook — book one or more slots in a single message',
             '/mybookings — view your upcoming bookings',
             '/cancel — cancel the current flow',
             '',
@@ -144,6 +145,51 @@ export async function handleHelp(ctx: Context): Promise<void> {
             '❓ *Help*',
             '/help — show this message',
         ].join('\n'),
+        { parse_mode: 'Markdown' },
+    );
+}
+
+// ─── Instant booking helpers ──────────────────────────────────────────────────
+
+/**
+ * Formats an `InstantBookingResult[]` into a Markdown summary message,
+ * one line per requested slot.
+ */
+function formatInstantBookSummary(date: string, results: InstantBookingResult[]): string {
+    const dateLabel = DateTime.fromISO(date).toFormat('dd MMM yyyy');
+    const lines = [`📋 *Instant Booking — ${dateLabel}*`, ''];
+
+    for (const r of results) {
+        if (r.status === 'booked') {
+            lines.push(`✅  *${r.time}*  →  booked`);
+            lines.push(`      🔖 \`${r.appointmentId}\``);
+        } else if (r.status === 'unavailable') {
+            lines.push(`⚠️  *${r.time}*  →  unavailable`);
+        } else {
+            lines.push(`❌  *${r.time}*  →  failed`);
+            if (r.error) lines.push(`      _${r.error}_`);
+        }
+    }
+
+    return lines.join('\n');
+}
+
+/**
+ * /instantbook — sets the session to `instant_book` and asks for a date/times
+ * string. Requires a profile to already exist.
+ */
+export async function handleInstantBookCommand(ctx: Context): Promise<void> {
+    const id = uid(ctx);
+    const profile = await getProfile(id);
+
+    if (!profile) {
+        await ctx.reply('No profile found. Type /start to set one up first.');
+        return;
+    }
+
+    await setSession(id, { step: 'instant_book' });
+    await ctx.reply(
+        '⚡ *Instant Booking*\n\nSend the date and times you want to book:\n`DD/MM/YYYY HH:mm[, HH:mm …]`\n\nExample: `01/04/2026 14:00, 15:00`',
         { parse_mode: 'Markdown' },
     );
 }
@@ -230,6 +276,103 @@ export async function handleText(ctx: Context): Promise<void> {
                 `✅ Added to watchlist!\n\n📅 ${session.selectedDate} at *${text}*\n\nI'll auto-book it as soon as it enters the 2-week booking window.`,
                 { parse_mode: 'Markdown' },
             );
+            break;
+        }
+
+        // ── Instant booking ──────────────────────────────────────────────────
+        case 'instant_book': {
+            let parsed: { date: string; times: string[] };
+            try {
+                parsed = parseInstantBookingInput(text);
+            } catch (err) {
+                await ctx.reply(
+                    `⚠️ ${(err as Error).message}\n\nPlease try again or type /cancel to stop.`,
+                );
+                break; // stay in instant_book step
+            }
+
+            const date = DateTime.fromISO(parsed.date);
+
+            // Date is outside the booking window — offer watchlist for all times
+            if (isDateBeyondWindow(date)) {
+                await setSession(id, {
+                    step: 'instant_book',
+                    selectedDate: parsed.date,
+                    instantBookTimes: parsed.times,
+                });
+                await ctx.reply(
+                    `⚠️ *${date.toFormat('dd MMM yyyy')}* is more than ${BOOKINGS_CONFIG.maxAdvanceDays} days away — outside the booking window.\n\nAdd *${parsed.times.join(', ')}* to your watchlist instead?`,
+                    {
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard([
+                            [
+                                Markup.button.callback(
+                                    '📋 Add all to watchlist',
+                                    'instantbook:watchlist:yes',
+                                ),
+                            ],
+                            [
+                                Markup.button.callback(
+                                    '❌ Enter a different date',
+                                    'instantbook:watchlist:no',
+                                ),
+                            ],
+                        ]),
+                    },
+                );
+                break;
+            }
+
+            // Within window — book all requested slots
+            const profile = await getProfile(id);
+            if (!profile) {
+                await ctx.reply('Profile not found. Type /start to set up your profile.');
+                break;
+            }
+
+            await ctx.reply(
+                `⏳ Booking ${parsed.times.length} slot(s) on ${date.toFormat('dd MMM yyyy')}…`,
+            );
+
+            let results: InstantBookingResult[];
+            try {
+                results = await instantBook(parsed.date, parsed.times, profileToCustomer(profile));
+            } catch (err) {
+                console.error('[TelegramBot] instantBook error:', err);
+                await ctx.reply('⚠️ Could not complete bookings. Please try again later.');
+                break;
+            }
+
+            await clearSession(id);
+            await ctx.reply(formatInstantBookSummary(parsed.date, results), {
+                parse_mode: 'Markdown',
+            });
+
+            // Persist booking records — a DynamoDB failure must never hide a successful booking
+            for (const r of results.filter((r) => r.status === 'booked')) {
+                const [, m] = r.time.split(':').map(Number);
+                const startDt = DateTime.fromISO(`${parsed.date}T${r.time}:00`);
+                const endDt = startDt.plus({
+                    minutes: BOOKINGS_CONFIG.appointmentDurationMinutes,
+                });
+                const staffIdx = BOOKINGS_CONFIG.staffIndexByMinute[m] ?? 2;
+                const courtLabel =
+                    staffIdx === 1 ? 'Court 1' : staffIdx === 2 ? 'Court 2' : 'Court';
+                try {
+                    await saveBookingRecord(id, {
+                        appointmentId: r.appointmentId!,
+                        startTime: startDt.toISO()!,
+                        endTime: endDt.toISO()!,
+                        court: courtLabel,
+                        createdAt: DateTime.now().toISO()!,
+                    });
+                } catch (saveErr) {
+                    console.error(
+                        '[TelegramBot] saveBookingRecord failed for instant book:',
+                        saveErr,
+                    );
+                }
+            }
             break;
         }
 
@@ -453,6 +596,7 @@ export function registerHandlers(bot: Telegraf): void {
     bot.command('profile', handleProfileCommand);
     bot.command('mybookings', handleMyBookings);
     bot.command('delete', handleDelete);
+    bot.command('instantbook', handleInstantBookCommand);
 
     // Date picker — tapping a day button
     bot.action(/^date:(\d{4}-\d{2}-\d{2})$/, async (ctx) => {
@@ -549,6 +693,34 @@ export function registerHandlers(bot: Telegraf): void {
     bot.action('delete:cancel', async (ctx) => {
         await ctx.answerCbQuery();
         await ctx.reply('Cancelled. Your data is safe. ✅');
+    });
+
+    // Instant booking — watchlist offer for out-of-window dates
+    bot.action('instantbook:watchlist:yes', async (ctx) => {
+        await ctx.answerCbQuery();
+        const id = uid(ctx);
+        const session = await getSession(id);
+        if (!session?.selectedDate || !session?.instantBookTimes?.length) {
+            await ctx.reply('⚠️ Session expired. Type /instantbook to begin again.');
+            return;
+        }
+        for (const time of session.instantBookTimes) {
+            await addToWatchlist(id, session.selectedDate, time);
+        }
+        await clearSession(id);
+        await ctx.reply(
+            `✅ Added to watchlist!\n\n📅 *${session.selectedDate}* at *${session.instantBookTimes.join(', ')}*\n\nI'll auto-book as soon as they enter the 2-week booking window.`,
+            { parse_mode: 'Markdown' },
+        );
+    });
+
+    bot.action('instantbook:watchlist:no', async (ctx) => {
+        await ctx.answerCbQuery();
+        await setSession(uid(ctx), { step: 'instant_book' });
+        await ctx.reply(
+            '📅 Send a new date and times:\n`DD/MM/YYYY HH:mm[, HH:mm …]`\n\nExample: `01/04/2026 14:00, 15:00`',
+            { parse_mode: 'Markdown' },
+        );
     });
 
     // Catch-all text handler (must be registered last)

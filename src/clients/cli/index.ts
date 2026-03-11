@@ -1,7 +1,10 @@
 import 'dotenv/config';
 import { DateTime } from 'luxon';
 import {
+    printInstantBookSummary,
     promptDate,
+    promptInstantBook,
+    promptMainMenu,
     promptOnboarding,
     promptSlot,
     promptWatchlistOrExit,
@@ -11,7 +14,7 @@ import { isDateBeyondWindow } from '../../utils/date.utils';
 import { profileToCustomer } from '../../services/profile.service';
 import { getProfile, saveProfile } from '../../services/user.service';
 import { addToWatchlist, processPendingWatchlist } from '../../services/watchlist.service';
-import { createAppointment, getAvailableSlots } from '../../services/booking.service';
+import { createAppointment, getAvailableSlots, instantBook } from '../../services/booking.service';
 
 const USER_ID = 'default';
 
@@ -27,11 +30,42 @@ async function main() {
     // 2. Check watchlist on every run — auto-book any slots now within the 2-week window
     await processPendingWatchlist(USER_ID, profileToCustomer(profile));
 
-    // 3. Ask for a date
+    // 3. Main menu
+    const menuChoice = promptMainMenu();
+
+    // ── Instant booking flow ──────────────────────────────────────────────────
+    if (menuChoice === 'instantbook') {
+        const parsed = promptInstantBook();
+        if (!parsed) process.exit(0);
+
+        const date = DateTime.fromISO(parsed.date);
+
+        if (isDateBeyondWindow(date)) {
+            const action = promptWatchlistOrExit(date);
+            if (action === 'watchlist') {
+                for (const time of parsed.times) {
+                    await addToWatchlist(USER_ID, parsed.date, time);
+                }
+                console.log(
+                    `\n📋 Added ${parsed.times.length} time(s) to watchlist for ${date.toFormat('dd MMM yyyy')}.`,
+                );
+            }
+            process.exit(0);
+        }
+
+        console.log(`\nBooking ${parsed.times.length} slot(s) on ${date.toFormat('dd MMM yyyy')}…`);
+        const results = await instantBook(parsed.date, parsed.times, profileToCustomer(profile));
+        printInstantBookSummary(parsed.date, results);
+        process.exit(0);
+    }
+
+    // ── Step-by-step booking flow ─────────────────────────────────────────────
+
+    // 4. Ask for a date
     const date = promptDate();
     if (!date) process.exit(1);
 
-    // 4. If date is beyond the booking window, offer watchlist instead
+    // 5. If date is beyond the booking window, offer watchlist instead
     if (isDateBeyondWindow(date)) {
         const action = promptWatchlistOrExit(date);
         if (action === 'watchlist') {
@@ -40,7 +74,7 @@ async function main() {
         process.exit(0);
     }
 
-    // 5. Fetch available slots
+    // 6. Fetch available slots
     console.log(`\nFetching slots for ${date.toFormat('dd MMM yyyy')}...\n`);
     const slots = await getAvailableSlots(date);
 
@@ -51,14 +85,14 @@ async function main() {
 
     console.log(`Found ${slots.length} available slot(s) for ${date.toFormat('dd MMM yyyy')}:`);
 
-    // 6. Pick a slot
+    // 7. Pick a slot
     const selectedSlot = promptSlot(slots);
     if (!selectedSlot) process.exit(1);
 
-    // 7. Build customer payload
+    // 8. Build customer payload
     const customer = profileToCustomer(profile);
 
-    // 8. Book
+    // 9. Book
     console.log('\nBooking appointment...');
     const { appointment, staffIndex } = await createAppointment(selectedSlot, customer);
 

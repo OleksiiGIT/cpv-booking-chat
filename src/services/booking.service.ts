@@ -8,6 +8,7 @@ import {
     AVAILABILITY_STATUSES,
     AvailabilityPayload,
     AvailabilityResponse,
+    InstantBookingResult,
 } from '../types';
 import { BOOKINGS_CONFIG } from '../config/bookings.config';
 
@@ -117,4 +118,63 @@ export async function createAppointment(
         appointment,
         staffIndex,
     };
+}
+
+/**
+ * Books every requested time slot on `date` in a single call.
+ *
+ * - `date`  — ISO calendar string "YYYY-MM-DD" (as returned by `parseInstantBookingInput`)
+ * - `times` — array of "HH:mm" strings to book (order is preserved in the result)
+ *
+ * Strategy:
+ *   1. Call `getAvailableSlots` once and cache the result.
+ *      If the availability fetch itself fails every slot is returned as `'failed'`.
+ *   2. For each requested time:
+ *      - Not in available slots  → `{ status: 'unavailable' }`
+ *      - `createAppointment` succeeds → `{ status: 'booked', appointmentId }`
+ *      - `createAppointment` throws  → `{ status: 'failed', error }`
+ *   A failure on one slot never prevents the remaining slots from being attempted.
+ */
+export async function instantBook(
+    date: string,
+    times: string[],
+    customer: AppointmentCustomer,
+): Promise<InstantBookingResult[]> {
+    const dateTime = DateTime.fromISO(date);
+
+    // ── Fetch availability once ───────────────────────────────────────────────
+    let availableSlots: DateTime[];
+    try {
+        availableSlots = await getAvailableSlots(dateTime);
+    } catch (err) {
+        const error = err instanceof Error ? err.message : 'Failed to fetch available slots';
+        return times.map((time) => ({ time, status: 'failed', error }));
+    }
+
+    // Build an O(1) lookup: "HH:mm" → DateTime
+    const slotByTime = new Map<string, DateTime>(
+        availableSlots.map((slot) => [slot.toFormat('HH:mm'), slot]),
+    );
+
+    // ── Attempt each requested time independently ─────────────────────────────
+    const results: InstantBookingResult[] = [];
+
+    for (const time of times) {
+        const slot = slotByTime.get(time);
+
+        if (!slot) {
+            results.push({ time, status: 'unavailable' });
+            continue;
+        }
+
+        try {
+            const { appointment } = await createAppointment(slot, customer);
+            results.push({ time, status: 'booked', appointmentId: appointment.id });
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Failed to create appointment';
+            results.push({ time, status: 'failed', error });
+        }
+    }
+
+    return results;
 }
