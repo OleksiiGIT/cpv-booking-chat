@@ -34,6 +34,7 @@ export function promptInstantBook(): { date: string; times: string[] } | null {
 export function printInstantBookSummary(date: string, results: InstantBookingResult[]): void {
     const dateLabel = DateTime.fromISO(date).toFormat('dd MMM yyyy');
     console.log(`\n📋 Booking results for ${dateLabel}:\n`);
+
     for (const r of results) {
         if (r.status === 'booked') {
             console.log(`  ✅  ${r.time}  →  booked        ID: ${r.appointmentId}`);
@@ -43,6 +44,28 @@ export function printInstantBookSummary(date: string, results: InstantBookingRes
             console.log(`  ❌  ${r.time}  →  failed        ${r.error ?? ''}`);
         }
     }
+
+    const booked = results.filter((r) => r.status === 'booked').length;
+    const unavailable = results.filter((r) => r.status === 'unavailable').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
+
+    if (booked === 0) {
+        // All slots were unavailable or failed — make it explicit no booking was made
+        const reason =
+            unavailable === results.length
+                ? 'none of the requested slots were available'
+                : 'all booking attempts failed';
+        console.log(`\n  ❌  No appointments were made — ${reason}.`);
+    } else if (unavailable > 0 || failed > 0) {
+        // Partial success — print a tally so the outcome is unambiguous
+        const parts = [
+            `${booked} booked`,
+            unavailable > 0 ? `${unavailable} unavailable` : '',
+            failed > 0 ? `${failed} failed` : '',
+        ].filter(Boolean);
+        console.log(`\n  📊  ${parts.join(' · ')}`);
+    }
+
     console.log('');
 }
 

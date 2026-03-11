@@ -391,12 +391,12 @@ Examples:
       watchlist for each requested time instead
 - [x] **WhatsApp** — mirror the same flow in `src/clients/whatsapp/handlers.ts` with an
   equivalent free-text prompt
-- [ ] Add `INSTANT_BOOK` session step to the session schema in `src/services/session.service.ts`
+- [x] Add `INSTANT_BOOK` session step to the session schema in `src/services/session.service.ts`
   so the bot knows it is waiting for a free-text date/time string
-- [ ] Input validation & error messages:
+- [x] Input validation & error messages:
     - Unrecognised format → explain correct format and ask again (do not crash)
     - Past date → reject with a clear message
-    - All slots unavailable → inform the user; do not create any appointments
+    - All slots unavailable s→ inform the user; do not create any appointments
     - Partial success (some booked, some unavailable) → clearly list each outcome
 
 ### Phase 7 — Advance Booking Watchlist (bots)

@@ -582,6 +582,26 @@ function formatInstantBookSummary(date: string, results: InstantBookingResult[])
         }
     }
 
+    const booked = results.filter((r) => r.status === 'booked').length;
+    const unavailable = results.filter((r) => r.status === 'unavailable').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
+
+    lines.push('');
+    if (booked === 0) {
+        const reason =
+            unavailable === results.length
+                ? 'none of the requested slots were available'
+                : 'all booking attempts failed';
+        lines.push(`❌ *No appointments were made* — ${reason}.`);
+    } else if (unavailable > 0 || failed > 0) {
+        const parts = [
+            `${booked} booked`,
+            unavailable > 0 ? `${unavailable} unavailable` : '',
+            failed > 0 ? `${failed} failed` : '',
+        ].filter(Boolean);
+        lines.push(`📊 ${parts.join(' · ')}`);
+    }
+
     return lines.join('\n');
 }
 

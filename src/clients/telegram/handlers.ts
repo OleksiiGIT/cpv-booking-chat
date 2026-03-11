@@ -153,7 +153,8 @@ export async function handleHelp(ctx: Context): Promise<void> {
 
 /**
  * Formats an `InstantBookingResult[]` into a Markdown summary message,
- * one line per requested slot.
+ * one line per requested slot, with a footer that explicitly states the
+ * outcome when all slots are unavailable or the result is partial.
  */
 function formatInstantBookSummary(date: string, results: InstantBookingResult[]): string {
     const dateLabel = DateTime.fromISO(date).toFormat('dd MMM yyyy');
@@ -169,6 +170,26 @@ function formatInstantBookSummary(date: string, results: InstantBookingResult[])
             lines.push(`❌  *${r.time}*  →  failed`);
             if (r.error) lines.push(`      _${r.error}_`);
         }
+    }
+
+    const booked = results.filter((r) => r.status === 'booked').length;
+    const unavailable = results.filter((r) => r.status === 'unavailable').length;
+    const failed = results.filter((r) => r.status === 'failed').length;
+
+    lines.push('');
+    if (booked === 0) {
+        const reason =
+            unavailable === results.length
+                ? 'none of the requested slots were available'
+                : 'all booking attempts failed';
+        lines.push(`❌ *No appointments were made* — ${reason}.`);
+    } else if (unavailable > 0 || failed > 0) {
+        const parts = [
+            `${booked} booked`,
+            unavailable > 0 ? `${unavailable} unavailable` : '',
+            failed > 0 ? `${failed} failed` : '',
+        ].filter(Boolean);
+        lines.push(`📊 ${parts.join(' · ')}`);
     }
 
     return lines.join('\n');
